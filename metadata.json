@@ -1,0 +1,6 @@
+{
+  "name": "15 캐릭터 조합 & 가이드라인 정렬 스튜디오",
+  "description": "15종의 헤어/얼굴, 상의, 하의를 완벽 결합하고 가이드라인 규격에 맞춰 정렬, 미리보기 및 고화질 재단용 출력을 제공합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
