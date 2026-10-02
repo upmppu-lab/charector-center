@@ -5,66 +5,104 @@ export interface PartOffset {
 }
 
 export interface SlotConfig {
-  id: number; // 1 to 15
+  id: number; // 1 to 30
   name: string;
-  head: PartOffset;
-  body: PartOffset;
-  leg: PartOffset;
+  face: PartOffset;    // 얼굴 (얼굴형, 눈, 코, 입, 볼터치)
+  hair: PartOffset;    // 헤어 (앞머리, 뒷머리, 스타일)
+  body: PartOffset;    // 상의
+  leg: PartOffset;     // 하의
+  outfit: PartOffset;  // 상의+하의 (일체형 의상 30종)
+  head: PartOffset;    // 호환성 유지용 (hair와 동기화)
   global: PartOffset;
   enabled: boolean;
-  // Per-slot edge trim (e.g. for trimming adjacent hair #12 ponytail bleed)
   trimLeft?: number;
   trimRight?: number;
 }
 
-export interface GridDimensions {
-  cols: number; // 5
-  rows: number; // 3
-  canvasWidth: number;
-  canvasHeight: number;
-  slotWidth: number;
-  slotHeight: number;
-  marginHorizontal: number;
-  marginTop: number;
-  gapX: number;
-  gapY: number;
+export type PartCategory = 'face' | 'hair' | 'body' | 'leg' | 'head' | 'outfit';
+
+export interface AnchorSettings {
+  // Face & Hair anchor: nose center
+  faceNoseY: number;
+  hairNoseY: number;
+  headNoseY: number; // 호환성
+  // Top anchor: neck top center
+  bodyNeckY: number;
+  outfitNeckY?: number; // 상의+하의 목끝 결합 기준선
+  // Bottom anchor: foot ground center
+  legFootY: number;
+  // Assembly joint spacing
+  neckJointGap: number;
+  waistJointGap: number;
 }
 
-export interface GuideLineSettings {
-  showGuideBackground: boolean;
-  guideOpacity: number; // 0.0 to 1.0
-  showEyeLine: boolean;
-  showFootLine: boolean;
-  eyeLineYOffset: number; // Pixels to move eye line up/down
-  footLineYOffset: number; // Pixels to move foot line up/down
+export interface GuideDisplaySettings {
+  showAnchorCrosshair: boolean;
   showCenterLine: boolean;
+  centerLineColor?: string;
+  centerLineWidth?: number;
+  centerLineStyle?: 'solid' | 'dashed';
+  showReferenceLines: boolean; // eye/nose line for head, neck/shoulder line for body, waist/foot line for leg
   showBoxBorder: boolean;
   showNumbers: boolean;
   showCutMarks: boolean;
   cutMarkColor: string;
   cutMarkStyle: 'dashed' | 'solid' | 'cropmarks';
   cutMarkWidth: number;
-  backgroundColor: 'white' | 'transparent' | 'dark' | 'grid';
+  backgroundColor: 'transparent' | 'dark' | 'grid' | 'white';
+}
+
+export type SheetMode = 15 | 30;
+export type Grid30Layout = 'auto' | '6x5' | '5x6' | '10x3' | '3x10';
+export type CompositionMode = '2part' | '4part'; // '2part': 얼굴 30종 + 상의/하의 30종 | '4part': 얼굴+헤어+상의+하의
+
+export interface SheetSliceConfig {
+  autoDetect: boolean;
+  rows: number;
+  cols: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+  gapX: number;
+  gapY: number;
+  offsetX: number;
+  offsetY: number;
+  customCellBoxes?: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
 export interface ProcessingSettings {
   bgRemovalMethod: 'floodfill' | 'whitekey' | 'none';
   tolerance: number; // 0 to 50
   smoothEdges: boolean;
-  layerOrder: 'head-body-leg' | 'head-leg-body';
-  autoCleanStrayHair: boolean; // Automatically detect and remove disconnected neighbor hair bleed
-  sideTrimPx: number; // Margin trim on tile boundaries (0 to 30px)
+  layerOrder: 'hair-face-body-leg' | 'head-body-leg' | 'head-leg-body';
+  autoCleanStrayHair: boolean;
+  sideTrimPx: number;
+  sheetMode?: SheetMode;
+  grid30Layout?: Grid30Layout;
+  compositionMode?: CompositionMode;
+  sliceConfig?: SheetSliceConfig;
 }
 
 export interface UploadedSheets {
   faceSheet: HTMLImageElement | null;
+  hairSheet: HTMLImageElement | null;
   bodySheet: HTMLImageElement | null;
   legSheet: HTMLImageElement | null;
-  guideSheet: HTMLImageElement | null;
+  outfitSheet?: HTMLImageElement | null; // 상의+하의 30종 시트
   faceFileName?: string;
+  hairFileName?: string;
   bodyFileName?: string;
   legFileName?: string;
-  guideFileName?: string;
+  outfitFileName?: string;
 }
 
-export type SelectedPart = 'global' | 'head' | 'body' | 'leg';
+export type ActiveAppView =
+  | 'align-face'
+  | 'align-hair'
+  | 'align-body'
+  | 'align-leg'
+  | 'align-head'
+  | 'align-outfit'
+  | 'game-customizer'
+  | 'export';

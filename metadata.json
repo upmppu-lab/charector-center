@@ -1,6 +1,6 @@
 {
-  "name": "15 캐릭터 조합 & 가이드라인 정렬 스튜디오",
-  "description": "15종의 헤어/얼굴, 상의, 하의를 완벽 결합하고 가이드라인 규격에 맞춰 정렬, 미리보기 및 고화질 재단용 출력을 제공합니다.",
+  "name": "15/30 캐릭터 조합 & 가이드라인 정렬 스튜디오",
+  "description": "얼굴 30종(코 중심), 상의+하의 의상 30종(목깃/허리 중심) 및 4파트(얼굴, 헤어, 상의, 하의) 분할 정렬, 실시간 게임 캐릭터 선택창 조립, 파트별 PNG ZIP 추출을 완벽 지원합니다.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

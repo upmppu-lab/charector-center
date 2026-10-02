@@ -1,227 +1,421 @@
-import React from 'react';
+import React, { useState } from 'react';
+import {
+  AnchorSettings,
+  PartCategory,
+  SlotConfig,
+} from '../types';
 import { CHARACTER_DESCRIPTIONS } from '../utils/sampleData';
-import { GuideLineSettings, ProcessingSettings, SelectedPart, SlotConfig } from '../types';
+import {
+  downloadCanvas,
+  renderSinglePartTile,
+} from '../utils/imageProcessor';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Check,
-  Eye,
-  EyeOff,
-  Move,
+  Download,
   RotateCcw,
-  Scissors,
-  Shirt,
+  Sliders,
   Sparkles,
-  User,
-  Users,
+  Scissors,
+  Check,
+  Maximize2,
+  Wand2,
+  Layers,
 } from 'lucide-react';
-import { renderSingleCharacter } from '../utils/imageProcessor';
 
 interface CharacterInspectorProps {
+  partCategory: PartCategory;
   activeSlotId: number | null;
   onSelectSlot: (id: number | null) => void;
-  selectedPart: SelectedPart;
-  onSelectPart: (part: SelectedPart) => void;
   slotConfigs: SlotConfig[];
   onUpdateSlotConfig: (id: number, updater: (prev: SlotConfig) => SlotConfig) => void;
-  onBatchUpdateConfigs: (updater: (prev: SlotConfig) => SlotConfig) => void;
+  onBatchUpdateConfigs?: (updater: (prev: SlotConfig) => SlotConfig) => void;
   onResetSlotConfig: (id: number) => void;
-  onResetAllConfigs: () => void;
-  headTiles: HTMLCanvasElement[];
-  bodyTiles: HTMLCanvasElement[];
-  legTiles: HTMLCanvasElement[];
-  guideSettings: GuideLineSettings;
-  onUpdateGuideSettings: (settings: Partial<GuideLineSettings>) => void;
-  processingSettings: ProcessingSettings;
-  onUpdateProcessingSettings: (settings: Partial<ProcessingSettings>) => void;
-  onReSliceSheets: () => void;
+  onAutoAlignSingle?: (id: number, category: PartCategory) => void;
+  onAutoAlignCategory?: (category: PartCategory) => void;
+  onAutoAlignAllParts?: () => void;
+  tiles: HTMLCanvasElement[];
+  anchorSettings: AnchorSettings;
+  slotCount?: number;
 }
 
 export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
+  partCategory,
   activeSlotId,
   onSelectSlot,
-  selectedPart,
-  onSelectPart,
   slotConfigs,
   onUpdateSlotConfig,
   onBatchUpdateConfigs,
   onResetSlotConfig,
-  onResetAllConfigs,
-  headTiles,
-  bodyTiles,
-  legTiles,
-  guideSettings,
-  onUpdateGuideSettings,
-  processingSettings,
-  onUpdateProcessingSettings,
-  onReSliceSheets,
+  onAutoAlignSingle,
+  onAutoAlignCategory,
+  onAutoAlignAllParts,
+  tiles,
+  anchorSettings,
+  slotCount = 15,
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'single' | 'guide' | 'batch'>('single');
-  const [nudgeStep, setNudgeStep] = React.useState<number>(2);
+  const [inspectorMode, setInspectorMode] = useState<'single' | 'batch'>('single');
+  const [batchCategory, setBatchCategory] = useState<PartCategory>(partCategory);
+  const [nudgeStep, setNudgeStep] = useState<number>(2);
+  const [batchStep, setBatchStep] = useState<number>(2);
+
+  const totalSlots = slotCount || tiles.length || 15;
+
+  // Keep batchCategory synced when view changes
+  React.useEffect(() => {
+    setBatchCategory(partCategory);
+  }, [partCategory]);
 
   const currentId = activeSlotId || 1;
   const currentConfig = slotConfigs.find((s) => s.id === currentId) || {
     id: currentId,
     name: `캐릭터 #${currentId}`,
-    head: { x: 0, y: 0, scale: 1 },
+    face: { x: 0, y: 0, scale: 1 },
+    hair: { x: 0, y: 0, scale: 1 },
     body: { x: 0, y: 0, scale: 1 },
     leg: { x: 0, y: 0, scale: 1 },
+    outfit: { x: 0, y: 0, scale: 1 },
+    head: { x: 0, y: 0, scale: 1 },
     global: { x: 0, y: 0, scale: 1 },
     enabled: true,
   };
 
+  const partOffset =
+    partCategory === 'head'
+      ? currentConfig.hair || currentConfig.head || { x: 0, y: 0, scale: 1 }
+      : partCategory === 'outfit'
+      ? currentConfig.outfit || currentConfig.body || { x: 0, y: 0, scale: 1 }
+      : currentConfig[partCategory] || { x: 0, y: 0, scale: 1 };
+  const currentTile = tiles[currentId - 1] || null;
   const desc = CHARACTER_DESCRIPTIONS.find((d) => d.id === currentId);
 
-  // Render preview for current single character
-  const previewCanvasRef = React.useRef<HTMLCanvasElement>(null);
+  // Single tile preview canvas
+  const previewRef = React.useRef<HTMLCanvasElement>(null);
   React.useEffect(() => {
-    const canvas = previewCanvasRef.current;
-    if (!canvas) return;
+    const canvas = previewRef.current;
+    if (!canvas || !currentTile) return;
+
+    const rendered = renderSinglePartTile(currentTile, partOffset, 320);
+    canvas.width = 320;
+    canvas.height = 320;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const head = headTiles[currentId - 1] || null;
-    const body = bodyTiles[currentId - 1] || null;
-    const leg = legTiles[currentId - 1] || null;
+    // Draw dark background & grid
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 320, 320);
 
-    const charCanvas = renderSingleCharacter(
-      head,
-      body,
-      leg,
-      currentConfig,
-      360,
-      processingSettings.layerOrder
-    );
+    // Draw Part first
+    ctx.drawImage(rendered, 0, 0, 320, 320);
 
-    canvas.width = charCanvas.width;
-    canvas.height = charCanvas.height;
-    ctx.drawImage(charCanvas, 0, 0);
-  }, [currentId, currentConfig, headTiles, bodyTiles, legTiles, processingSettings.layerOrder]);
+    // Draw high-visibility vertical center line (세로 중심선 - 듀얼 스트로크)
+    ctx.save();
+    // 1. Dark outer border
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(160, 0);
+    ctx.lineTo(160, 320);
+    ctx.stroke();
 
-  // Helper for nudging a part
-  const nudgePart = (part: SelectedPart, dx: number, dy: number) => {
-    onUpdateSlotConfig(currentId, (p) => {
-      if (part === 'global') {
-        return {
-          ...p,
-          global: { ...p.global, x: p.global.x + dx, y: p.global.y + dy },
-        };
-      }
+    // 2. Vivid neon inner core
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(160, 0);
+    ctx.lineTo(160, 320);
+    ctx.stroke();
+
+    // Horizontal faint helper
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, 160);
+    ctx.lineTo(320, 160);
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw specific Anchor marker
+    const cx = 160;
+    let anchorY = 160;
+    let strokeColor = '#f97316';
+
+    if (partCategory === 'face') {
+      anchorY = 160 + (anchorSettings.faceNoseY ?? anchorSettings.headNoseY ?? 10) * (320 / 400);
+      strokeColor = '#f97316'; // Orange Nose for Face
+    } else if (partCategory === 'hair' || partCategory === 'head') {
+      anchorY = 160 + (anchorSettings.hairNoseY ?? anchorSettings.headNoseY ?? 10) * (320 / 400);
+      strokeColor = '#c084fc'; // Purple Nose for Hair
+    } else if (partCategory === 'body') {
+      anchorY = 160 + anchorSettings.bodyNeckY * (320 / 400);
+      strokeColor = '#38bdf8'; // Blue Neck
+    } else if (partCategory === 'outfit') {
+      anchorY = 160 + (anchorSettings.outfitNeckY ?? anchorSettings.bodyNeckY ?? -95) * (320 / 400);
+      strokeColor = '#38bdf8'; // Blue Neck
+
+      // Draw pink waist guide for outfit
+      ctx.save();
+      ctx.strokeStyle = 'rgba(236, 72, 153, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, 160 + 10 * (320 / 400));
+      ctx.lineTo(320, 160 + 10 * (320 / 400));
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      anchorY = 160 + anchorSettings.legFootY * (320 / 400);
+      strokeColor = '#eab308'; // Amber Foot
+    }
+
+    ctx.save();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.moveTo(0, anchorY);
+    ctx.lineTo(320, anchorY);
+    ctx.stroke();
+
+    ctx.fillStyle = strokeColor;
+    ctx.beginPath();
+    ctx.arc(cx, anchorY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }, [currentTile, partOffset, partCategory, anchorSettings]);
+
+  const handleNudge = (dx: number, dy: number) => {
+    onUpdateSlotConfig(currentId, (prev) => ({
+      ...prev,
+      [partCategory]: {
+        ...prev[partCategory],
+        x: prev[partCategory].x + dx,
+        y: prev[partCategory].y + dy,
+      },
+    }));
+  };
+
+  // Batch actions on 15 items
+  const handleBatchScaleDelta = (delta: number) => {
+    if (!onBatchUpdateConfigs) return;
+    onBatchUpdateConfigs((prev) => {
+      const current = prev[batchCategory];
+      const newScale = Math.max(0.3, Math.min(2.0, Number((current.scale + delta).toFixed(2))));
       return {
-        ...p,
-        [part]: { ...p[part], x: p[part].x + dx, y: p[part].y + dy },
+        ...prev,
+        [batchCategory]: {
+          ...current,
+          scale: newScale,
+        },
       };
     });
   };
 
+  const handleBatchScaleExact = (exactScale: number) => {
+    if (!onBatchUpdateConfigs) return;
+    onBatchUpdateConfigs((prev) => ({
+      ...prev,
+      [batchCategory]: {
+        ...prev[batchCategory],
+        scale: exactScale,
+      },
+    }));
+  };
+
+  const handleBatchNudgePos = (dx: number, dy: number) => {
+    if (!onBatchUpdateConfigs) return;
+    onBatchUpdateConfigs((prev) => ({
+      ...prev,
+      [batchCategory]: {
+        ...prev[batchCategory],
+        x: prev[batchCategory].x + dx,
+        y: prev[batchCategory].y + dy,
+      },
+    }));
+  };
+
+  const handleBatchResetPos = () => {
+    if (!onBatchUpdateConfigs) return;
+    onBatchUpdateConfigs((prev) => ({
+      ...prev,
+      [batchCategory]: {
+        ...prev[batchCategory],
+        x: 0,
+        y: 0,
+      },
+    }));
+  };
+
+  const handleBatchResetAll = () => {
+    if (!onBatchUpdateConfigs) return;
+    onBatchUpdateConfigs((prev) => ({
+      ...prev,
+      [batchCategory]: {
+        x: 0,
+        y: 0,
+        scale: 1,
+      },
+    }));
+  };
+
+  const handleDownloadSinglePng = () => {
+    if (!currentTile) return;
+    const canvas = renderSinglePartTile(currentTile, partOffset, 512);
+    const prefix =
+      partCategory === 'face'
+        ? 'face'
+        : partCategory === 'hair' || partCategory === 'head'
+        ? 'hair'
+        : partCategory === 'body'
+        ? 'top'
+        : 'bottom';
+    downloadCanvas(canvas, `${prefix}_${String(currentId).padStart(2, '0')}.png`);
+  };
+
+  // Calculate average scale for batchCategory
+  const activeConfigs = slotConfigs.slice(0, totalSlots);
+  const avgScale = Math.round(
+    (activeConfigs.reduce((acc, cur) => acc + cur[batchCategory].scale, 0) /
+      (activeConfigs.length || 1)) *
+      100
+  );
+
   return (
-    <aside className="w-84 sm:w-96 bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-hidden text-slate-200 select-none shadow-xl shrink-0">
-      {/* Tab Switcher */}
-      <div className="flex border-b border-slate-800 bg-slate-950/50 p-1">
-        <button
-          onClick={() => setActiveTab('single')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
-            activeTab === 'single'
-              ? 'bg-slate-800 text-white shadow'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <User className="w-3.5 h-3.5 text-indigo-400" />
-          <span>파츠별 이동/조절</span>
-        </button>
+    <div className="w-80 border-l border-slate-800 bg-slate-900/95 flex flex-col h-full overflow-hidden text-white select-none">
+      {/* Header */}
+      <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+            {inspectorMode === 'single'
+              ? `슬롯 #${currentId} 정렬 인스펙터`
+              : `⚡ ${totalSlots}개 일괄 조절 (얼굴/헤어/상의/하의)`}
+          </span>
+          <p className="text-[10px] text-slate-400">
+            {inspectorMode === 'single'
+              ? '개별 캐릭터의 오프셋 및 크기를 정밀 조정'
+              : `${totalSlots}개 스프라이트 전체의 크기와 위치를 한 번에 조정`}
+          </p>
+        </div>
 
-        <button
-          onClick={() => setActiveTab('guide')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
-            activeTab === 'guide'
-              ? 'bg-slate-800 text-white shadow'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Scissors className="w-3.5 h-3.5 text-amber-400" />
-          <span>가이드선 이동 & 재단</span>
-        </button>
+        {inspectorMode === 'single' && (
+          <button
+            onClick={handleDownloadSinglePng}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition"
+            title="이 파트만 단독 PNG로 다운로드"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
 
+      {/* Mode Switcher Tabs: Single vs Batch */}
+      <div className="flex border-b border-slate-800 bg-slate-950/70 p-1 gap-1">
         <button
-          onClick={() => setActiveTab('batch')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
-            activeTab === 'batch'
-              ? 'bg-slate-800 text-white shadow'
-              : 'text-slate-400 hover:text-slate-200'
+          onClick={() => setInspectorMode('single')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${
+            inspectorMode === 'single'
+              ? 'bg-indigo-600 text-white shadow'
+              : 'text-slate-400 hover:text-white'
           }`}
         >
-          <Users className="w-3.5 h-3.5 text-sky-400" />
-          <span>일괄 조정</span>
+          단일 #{currentId} 조절
+        </button>
+        <button
+          onClick={() => setInspectorMode('batch')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+            inspectorMode === 'batch'
+              ? 'bg-purple-600 text-white shadow'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+          ⚡ {totalSlots}개 일괄 조절
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
-        {/* ===================== TAB 1: INDIVIDUAL FINE-TUNING ===================== */}
-        {activeTab === 'single' && (
-          <div className="space-y-4">
-            {/* Character Selector & Reset */}
-            <div className="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200">
-                  선택된 캐릭터: #{currentId}번
-                </span>
-                <button
-                  onClick={() => onResetSlotConfig(currentId)}
-                  className="text-[11px] text-slate-400 hover:text-indigo-400 flex items-center gap-1"
-                  title="현재 캐릭터 위치 초기화"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>초기화</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-5 gap-1">
-                {Array.from({ length: 15 }, (_, i) => i + 1).map((id) => (
+      {/* Content Area */}
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar text-xs">
+        {inspectorMode === 'single' ? (
+          /* ================= SINGLE SLOT MODE ================= */
+          <>
+            {/* Slot selector grid */}
+            <div>
+              <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
+                {totalSlots}개 슬롯 빠른 선택
+              </span>
+              <div className="grid grid-cols-5 gap-1 max-h-40 overflow-y-auto custom-scrollbar p-0.5">
+                {Array.from({ length: totalSlots }, (_, i) => i + 1).map((id) => (
                   <button
                     key={id}
                     onClick={() => onSelectSlot(id)}
-                    className={`py-1 text-xs font-bold rounded-lg border transition ${
+                    className={`py-1 text-xs font-semibold rounded transition ${
                       currentId === id
-                        ? 'bg-indigo-600 text-white border-indigo-400 shadow-md'
-                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
                     }`}
                   >
                     #{id}
                   </button>
                 ))}
               </div>
-
-              {desc && (
-                <div className="text-[11px] text-slate-400 bg-slate-900/70 p-2 rounded-lg border border-slate-800 space-y-0.5">
-                  <div className="font-semibold text-slate-200">
-                    #{desc.id} {desc.hair}
-                  </div>
-                  <div className="text-sky-300">상의: {desc.top}</div>
-                  <div className="text-pink-300">하의: {desc.bottom}</div>
-                </div>
-              )}
             </div>
 
-            {/* PART SELECTOR FOR ARROW KEYS & DIRECT D-PAD */}
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Move className="w-3.5 h-3.5 text-indigo-400" />
-                  이동할 파츠 선택
-                </span>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <span>이동 단위:</span>
-                  {[1, 3, 5, 10].map((step) => (
+            {/* Single Part Canvas Preview */}
+            <div className="flex flex-col items-center">
+              <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black/60 shadow-lg">
+                <canvas ref={previewRef} width={320} height={320} className="w-44 h-44 block" />
+                <div className="absolute top-1.5 left-2 text-[10px] font-mono text-slate-400 bg-slate-900/80 px-1.5 py-0.5 rounded">
+                  #{currentId}{' '}
+                  {partCategory === 'face'
+                    ? desc?.face
+                    : partCategory === 'hair' || partCategory === 'head'
+                    ? desc?.hair
+                    : partCategory === 'body'
+                    ? desc?.top
+                    : desc?.bottom}
+                </div>
+              </div>
+            </div>
+
+            {/* Single Slot Auto Align Button */}
+            <button
+              type="button"
+              onClick={() => onAutoAlignSingle && onAutoAlignSingle(currentId, partCategory)}
+              className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400/40"
+              title={`이 슬롯의 스프라이트를 분석하여 (${partCategory === 'face' ? '코 중심 사각형 중앙' : partCategory === 'hair' ? '코 기준점 결합' : partCategory === 'body' ? '목깃 상단' : '허리선'})에 자동 배치합니다`}
+            >
+              <Wand2 className="w-3.5 h-3.5 text-amber-200" />
+              <span>
+                #{currentId} 스마트 자동 정렬 (
+                {partCategory === 'face'
+                  ? '코 중심'
+                  : partCategory === 'hair' || partCategory === 'head'
+                  ? '헤어 결합'
+                  : partCategory === 'body'
+                  ? '목끝 상단'
+                  : '허리선'}
+                )
+              </span>
+            </button>
+
+            {/* D-Pad Nudge Controls */}
+            <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-slate-300">위치 미세 이동 (Nudge)</span>
+                {/* Step size */}
+                <div className="flex items-center gap-1 bg-slate-800 rounded p-0.5 border border-slate-700">
+                  {[1, 2, 5, 10].map((step) => (
                     <button
                       key={step}
                       onClick={() => setNudgeStep(step)}
-                      className={`px-1.5 py-0.5 rounded font-mono ${
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
                         nudgeStep === step
-                          ? 'bg-indigo-600 text-white font-bold'
-                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       {step}px
@@ -230,751 +424,421 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                 </div>
               </div>
 
-              {/* 4 Part Buttons */}
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="flex flex-col items-center gap-1">
                 <button
-                  onClick={() => onSelectPart('global')}
-                  className={`py-2 px-1 text-xs font-bold rounded-lg border transition text-center ${
-                    selectedPart === 'global'
-                      ? 'bg-indigo-600 text-white border-indigo-400 shadow'
-                      : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-700'
-                  }`}
+                  onClick={() => handleNudge(0, -nudgeStep)}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition"
+                  title="위로 이동"
                 >
-                  전신
+                  <ArrowUp className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => onSelectPart('head')}
-                  className={`py-2 px-1 text-xs font-bold rounded-lg border transition text-center ${
-                    selectedPart === 'head'
-                      ? 'bg-purple-600 text-white border-purple-400 shadow'
-                      : 'bg-slate-800/90 text-purple-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  💜 머리
-                </button>
-                <button
-                  onClick={() => onSelectPart('body')}
-                  className={`py-2 px-1 text-xs font-bold rounded-lg border transition text-center ${
-                    selectedPart === 'body'
-                      ? 'bg-sky-600 text-white border-sky-400 shadow'
-                      : 'bg-slate-800/90 text-sky-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  👕 상의
-                </button>
-                <button
-                  onClick={() => onSelectPart('leg')}
-                  className={`py-2 px-1 text-xs font-bold rounded-lg border transition text-center ${
-                    selectedPart === 'leg'
-                      ? 'bg-pink-600 text-white border-pink-400 shadow'
-                      : 'bg-slate-800/90 text-pink-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  👖 하의
-                </button>
-              </div>
-
-              {/* D-Pad Buttons for immediate visible movement! */}
-              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/90 flex flex-col items-center gap-1.5">
-                <div className="text-[11px] font-medium text-slate-400 flex items-center justify-between w-full px-1">
-                  <span>
-                    현재 조작 대상:{' '}
-                    <strong className="text-white">
-                      {selectedPart === 'global'
-                        ? '전신(전체)'
-                        : selectedPart === 'head'
-                        ? '머리/헤어'
-                        : selectedPart === 'body'
-                        ? '상의/의상'
-                        : '하의/스커트'}
-                    </strong>
-                  </span>
-                  <span className="font-mono text-xs text-indigo-400">
-                    X:{' '}
-                    {selectedPart === 'global'
-                      ? currentConfig.global.x
-                      : currentConfig[selectedPart].x}
-                    px, Y:{' '}
-                    {selectedPart === 'global'
-                      ? currentConfig.global.y
-                      : currentConfig[selectedPart].y}
-                    px
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center gap-1 my-1">
-                  <button
-                    onClick={() => nudgePart(selectedPart, 0, -nudgeStep)}
-                    className="p-2.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg border border-slate-700 hover:border-indigo-500 shadow transition active:scale-95"
-                    title={`위로 ${nudgeStep}px 이동`}
-                  >
-                    <ArrowUp className="w-4 h-4" />
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => nudgePart(selectedPart, -nudgeStep, 0)}
-                      className="p-2.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg border border-slate-700 hover:border-indigo-500 shadow transition active:scale-95"
-                      title={`왼쪽으로 ${nudgeStep}px 이동`}
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        onUpdateSlotConfig(currentId, (p) => {
-                          if (selectedPart === 'global') {
-                            return { ...p, global: { ...p.global, x: 0, y: 0 } };
-                          }
-                          return {
-                            ...p,
-                            [selectedPart]: { ...p[selectedPart], x: 0, y: 0 },
-                          };
-                        })
-                      }
-                      className="px-2 py-1 text-[10px] font-bold bg-slate-800 text-slate-400 hover:text-white rounded border border-slate-700"
-                      title="중앙 원점 복귀"
-                    >
-                      (0,0)
-                    </button>
-
-                    <button
-                      onClick={() => nudgePart(selectedPart, nudgeStep, 0)}
-                      className="p-2.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg border border-slate-700 hover:border-indigo-500 shadow transition active:scale-95"
-                      title={`오른쪽으로 ${nudgeStep}px 이동`}
-                    >
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => nudgePart(selectedPart, 0, nudgeStep)}
-                    className="p-2.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg border border-slate-700 hover:border-indigo-500 shadow transition active:scale-95"
-                    title={`아래로 ${nudgeStep}px 이동`}
-                  >
-                    <ArrowDown className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500 text-center">
-                  키보드 방향키(↑ ↓ ← →)로도 실시간 이동 가능 (Shift 누르면 5배)
-                </p>
-              </div>
-            </div>
-
-            {/* DETAILED SLIDERS FOR BODY (상의), HEAD (머리), LEG (하의) */}
-            <div className="space-y-3">
-              {/* 상의 (Top) Dedicated Controls */}
-              <div className="bg-slate-800/40 p-3 rounded-xl border border-sky-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-sky-400" />
-                    👕 상의(의상) 상세 슬라이더
-                  </span>
-                  <span className="text-[11px] font-mono text-sky-400">
-                    X:{currentConfig.body.x} / Y:{currentConfig.body.y}px
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      좌우 X 위치
-                    </label>
-                    <input
-                      type="range"
-                      min="-100"
-                      max="100"
-                      value={currentConfig.body.x}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          body: { ...p.body, x: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-sky-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      상하 Y 위치 (높낮이)
-                    </label>
-                    <input
-                      type="range"
-                      min="-120"
-                      max="120"
-                      value={currentConfig.body.y}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          body: { ...p.body, y: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-sky-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                    <span>상의 크기 배율</span>
-                    <span className="font-mono text-sky-400">
-                      {Math.round((currentConfig.body.scale || 1) * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.7"
-                    max="1.3"
-                    step="0.01"
-                    value={currentConfig.body.scale || 1}
-                    onChange={(e) =>
-                      onUpdateSlotConfig(currentId, (p) => ({
-                        ...p,
-                        body: { ...p.body, scale: Number(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-sky-500"
-                  />
-                </div>
-              </div>
-
-              {/* 머리 (Head) Controls */}
-              <div className="bg-slate-800/40 p-3 rounded-xl border border-purple-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-purple-400" />
-                    💜 머리(헤어) 상세 슬라이더
-                  </span>
-                  <span className="text-[11px] font-mono text-purple-400">
-                    X:{currentConfig.head.x} / Y:{currentConfig.head.y}px
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      좌우 X 위치
-                    </label>
-                    <input
-                      type="range"
-                      min="-100"
-                      max="100"
-                      value={currentConfig.head.x}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          head: { ...p.head, x: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-purple-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      상하 Y 위치 (목 깊이)
-                    </label>
-                    <input
-                      type="range"
-                      min="-120"
-                      max="120"
-                      value={currentConfig.head.y}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          head: { ...p.head, y: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-purple-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 하의 (Legs) Controls */}
-              <div className="bg-slate-800/40 p-3 rounded-xl border border-pink-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-pink-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-pink-400" />
-                    👖 하의(스커트) 상세 슬라이더
-                  </span>
-                  <span className="text-[11px] font-mono text-pink-400">
-                    X:{currentConfig.leg.x} / Y:{currentConfig.leg.y}px
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      좌우 X 위치
-                    </label>
-                    <input
-                      type="range"
-                      min="-100"
-                      max="100"
-                      value={currentConfig.leg.x}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          leg: { ...p.leg, x: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-pink-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">
-                      상하 Y 위치 (허리 연결)
-                    </label>
-                    <input
-                      type="range"
-                      min="-120"
-                      max="120"
-                      value={currentConfig.leg.y}
-                      onChange={(e) =>
-                        onUpdateSlotConfig(currentId, (p) => ({
-                          ...p,
-                          leg: { ...p.leg, y: Number(e.target.value) },
-                        }))
-                      }
-                      className="w-full accent-pink-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================== TAB 2: GUIDE LINES & CUTTING (가이드선 이동) ===================== */}
-        {activeTab === 'guide' && (
-          <div className="space-y-4">
-            {/* Guide line 이동 설정 (눈선 & 발선 이동 기능!) */}
-            <div className="bg-slate-800/80 p-3.5 rounded-xl border border-blue-500/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Move className="w-3.5 h-3.5 text-blue-400" />
-                  가이드 기준선 위치 이동 (상하 조절)
-                </span>
-                <button
-                  onClick={() =>
-                    onUpdateGuideSettings({
-                      eyeLineYOffset: 0,
-                      footLineYOffset: 0,
-                    })
-                  }
-                  className="text-[11px] text-slate-400 hover:text-white"
-                >
-                  기본 위치 복귀
-                </button>
-              </div>
-
-              {/* 눈 중앙선 이동 (Blue) */}
-              <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-blue-400 font-semibold flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                    눈 중앙선 높이 (파란선)
-                  </span>
-                  <span className="font-mono text-blue-300">
-                    {guideSettings.eyeLineYOffset > 0
-                      ? `+${guideSettings.eyeLineYOffset}`
-                      : guideSettings.eyeLineYOffset}
-                    px
-                  </span>
-                </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() =>
-                      onUpdateGuideSettings({
-                        eyeLineYOffset: (guideSettings.eyeLineYOffset || 0) - 2,
-                      })
-                    }
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded border border-slate-700"
+                    onClick={() => handleNudge(-nudgeStep, 0)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition"
+                    title="왼쪽으로 이동"
                   >
-                    위로 (-2px)
+                    <ArrowLeft className="w-4 h-4" />
                   </button>
-                  <input
-                    type="range"
-                    min="-80"
-                    max="80"
-                    value={guideSettings.eyeLineYOffset || 0}
-                    onChange={(e) =>
-                      onUpdateGuideSettings({
-                        eyeLineYOffset: Number(e.target.value),
-                      })
-                    }
-                    className="flex-1 accent-blue-500"
-                  />
+                  <div className="w-14 text-center font-mono text-[11px] text-slate-300">
+                    {partOffset.x},{partOffset.y}
+                  </div>
                   <button
-                    onClick={() =>
-                      onUpdateGuideSettings({
-                        eyeLineYOffset: (guideSettings.eyeLineYOffset || 0) + 2,
-                      })
-                    }
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded border border-slate-700"
+                    onClick={() => handleNudge(nudgeStep, 0)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition"
+                    title="오른쪽으로 이동"
                   >
-                    아래로 (+2px)
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
-              </div>
-
-              {/* 발끝 / 바닥선 이동 (Orange) */}
-              <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-amber-400 font-semibold flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    발끝 / 바닥선 높이 (주황선)
-                  </span>
-                  <span className="font-mono text-amber-300">
-                    {guideSettings.footLineYOffset > 0
-                      ? `+${guideSettings.footLineYOffset}`
-                      : guideSettings.footLineYOffset}
-                    px
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      onUpdateGuideSettings({
-                        footLineYOffset: (guideSettings.footLineYOffset || 0) - 2,
-                      })
-                    }
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded border border-slate-700"
-                  >
-                    위로 (-2px)
-                  </button>
-                  <input
-                    type="range"
-                    min="-80"
-                    max="80"
-                    value={guideSettings.footLineYOffset || 0}
-                    onChange={(e) =>
-                      onUpdateGuideSettings({
-                        footLineYOffset: Number(e.target.value),
-                      })
-                    }
-                    className="flex-1 accent-amber-500"
-                  />
-                  <button
-                    onClick={() =>
-                      onUpdateGuideSettings({
-                        footLineYOffset: (guideSettings.footLineYOffset || 0) + 2,
-                      })
-                    }
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded border border-slate-700"
-                  >
-                    아래로 (+2px)
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleNudge(0, nudgeStep)}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition"
+                  title="아래로 이동"
+                >
+                  <ArrowDown className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {/* 인접 헤어 잘림/번짐 제거 설정 */}
-            <div className="bg-slate-800/80 p-3.5 rounded-xl border border-purple-500/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    인접 헤어 파편/잘림 자동 제거
-                  </span>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    옆 칸에서 넘어온 잔여 머리카락 파편을 지웁니다
-                  </p>
+            {/* Sliders: X, Y, Scale */}
+            <div className="space-y-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800">
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>가로 위치 (X)</span>
+                  <span className="font-mono text-indigo-400">{partOffset.x}px</span>
                 </div>
                 <input
-                  type="checkbox"
-                  checked={processingSettings.autoCleanStrayHair}
-                  onChange={(e) => {
-                    onUpdateProcessingSettings({
-                      autoCleanStrayHair: e.target.checked,
-                    });
-                  }}
-                  className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
+                  type="range"
+                  min={-100}
+                  max={100}
+                  value={partOffset.x}
+                  onChange={(e) =>
+                    onUpdateSlotConfig(currentId, (prev) => ({
+                      ...prev,
+                      [partCategory]: {
+                        ...prev[partCategory],
+                        x: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-indigo-500 cursor-pointer"
                 />
               </div>
 
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px] text-slate-300">
-                  <span>경계 마진 잘라내기 (Side Margin Trim)</span>
-                  <span className="font-mono text-purple-400">
-                    {processingSettings.sideTrimPx}px
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>세로 위치 (Y)</span>
+                  <span className="font-mono text-indigo-400">{partOffset.y}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  value={partOffset.y}
+                  onChange={(e) =>
+                    onUpdateSlotConfig(currentId, (prev) => ({
+                      ...prev,
+                      [partCategory]: {
+                        ...prev[partCategory],
+                        y: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-indigo-500 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>크기 비율 (Scale)</span>
+                  <span className="font-mono text-indigo-400">
+                    {Math.round(partOffset.scale * 100)}%
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0"
-                  max="25"
-                  value={processingSettings.sideTrimPx}
-                  onChange={(e) => {
-                    onUpdateProcessingSettings({
-                      sideTrimPx: Number(e.target.value),
-                    });
-                  }}
-                  className="w-full accent-purple-500"
+                  min={50}
+                  max={150}
+                  value={Math.round(partOffset.scale * 100)}
+                  onChange={(e) =>
+                    onUpdateSlotConfig(currentId, (prev) => ({
+                      ...prev,
+                      [partCategory]: {
+                        ...prev[partCategory],
+                        scale: Number(e.target.value) / 100,
+                      },
+                    }))
+                  }
+                  className="w-full accent-indigo-500 cursor-pointer"
                 />
-                <p className="text-[10px] text-slate-400">
-                  수치를 높이면 칸 경계선에 걸친 옆 헤어가 더 깨끗하게 잘려나갑니다
-                </p>
               </div>
-
-              <button
-                onClick={onReSliceSheets}
-                className="w-full py-1.5 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold rounded-lg border border-purple-500/40 transition"
-              >
-                헤어 파편 제거 다시 적용하기
-              </button>
             </div>
 
-            {/* Guide background toggle */}
-            <div className="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    4번 가이드 양식 배경
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    완성 후 삭제하여 캐릭터만 출력
-                  </div>
-                </div>
+            {/* Reset Button */}
+            <button
+              onClick={() => onResetSlotConfig(currentId)}
+              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>#{currentId} 오프셋 초기화</span>
+            </button>
+          </>
+        ) : (
+          /* ================= BATCH MODE ================= */
+          <>
+            {/* Part Category Selector (얼굴 / 헤어 / 상의 / 하의 / 상의+하의 선택) */}
+            <div>
+              <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
+                일괄 조절할 대상 파트 선택
+              </span>
+              <div className="grid grid-cols-5 gap-1">
                 <button
-                  onClick={() =>
-                    onUpdateGuideSettings({
-                      showGuideBackground: !guideSettings.showGuideBackground,
-                    })
-                  }
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                    guideSettings.showGuideBackground
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
-                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  onClick={() => setBatchCategory('face')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'face'
+                      ? 'bg-orange-500/20 text-orange-300 border-orange-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
                   }`}
                 >
-                  {guideSettings.showGuideBackground ? (
-                    <>
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>표시 중</span>
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="w-3.5 h-3.5" />
-                      <span>삭제/숨김</span>
-                    </>
-                  )}
+                  <span className="text-sm">😊</span>
+                  <span>얼굴</span>
+                </button>
+
+                <button
+                  onClick={() => setBatchCategory('hair')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'hair' || batchCategory === 'head'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  <span className="text-sm">💇</span>
+                  <span>헤어</span>
+                </button>
+
+                <button
+                  onClick={() => setBatchCategory('body')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'body'
+                      ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  <span className="text-sm">👕</span>
+                  <span>상의</span>
+                </button>
+
+                <button
+                  onClick={() => setBatchCategory('leg')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'leg'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  <span className="text-sm">👖</span>
+                  <span>하의</span>
+                </button>
+
+                <button
+                  onClick={() => setBatchCategory('outfit')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'outfit'
+                      ? 'bg-pink-500/20 text-pink-300 border-pink-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                  title="상의+하의 일체형 의상 30종 일괄 조절"
+                >
+                  <span className="text-sm">👗</span>
+                  <span>상의+하의</span>
                 </button>
               </div>
             </div>
 
-            {/* Cut Line Settings */}
-            <div className="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700 space-y-3">
+            {/* AI Smart Auto-Align Section */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/60 to-teal-950/60 border border-emerald-500/40 space-y-2">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Scissors className="w-3.5 h-3.5 text-emerald-400" />
-                    자르기(재단) 가이드 칼선
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    자로 쉽게 자를 수 있는 외곽 가이드선
-                  </div>
-                </div>
+                <span className="font-bold text-emerald-300 flex items-center gap-1.5 text-xs">
+                  <Wand2 className="w-4 h-4 text-emerald-400" />
+                  스마트 AI 특징점 자동 정렬
+                </span>
+                <span className="text-[10px] text-emerald-300/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30 font-semibold">
+                  원클릭 감지
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                얼굴은 코 중심을 정중앙에, 상의는 목깃을 맨 위에, 하의는 허리를 결합선에 맞추어 자동으로 배치합니다.
+              </p>
+              <div className="flex flex-col gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onAutoAlignCategory && onAutoAlignCategory(batchCategory)}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400/40"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                  <span>
+                    {batchCategory === 'face'
+                      ? '얼굴'
+                      : batchCategory === 'hair'
+                      ? '헤어'
+                      : batchCategory === 'body'
+                      ? '상의'
+                      : batchCategory === 'outfit'
+                      ? '상의+하의 의상'
+                      : '하의'}{' '}
+                    {totalSlots}개 전체 자동 정렬
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAutoAlignAllParts && onAutoAlignAllParts()}
+                  className="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-1.5 active:scale-95 border border-purple-400/40"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-200" />
+                  <span>4개 파트 ({totalSlots * 4}개) 원클릭 전체 결합</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 1. Batch Scale Controls (일괄 크기 변경) */}
+            <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-800/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <Maximize2 className="w-3.5 h-3.5 text-purple-400" />
+                  일괄 크기 변경 ({totalSlots}개 전체)
+                </span>
+                <span className="font-mono text-purple-300 font-bold px-2 py-0.5 bg-purple-900/40 rounded border border-purple-700/50">
+                  {avgScale}%
+                </span>
+              </div>
+
+              {/* Slider for exact scale */}
+              <div>
                 <input
-                  type="checkbox"
-                  checked={guideSettings.showCutMarks}
-                  onChange={(e) =>
-                    onUpdateGuideSettings({ showCutMarks: e.target.checked })
-                  }
-                  className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                  type="range"
+                  min={50}
+                  max={150}
+                  value={avgScale}
+                  onChange={(e) => handleBatchScaleExact(Number(e.target.value) / 100)}
+                  className="w-full accent-purple-500 cursor-pointer"
                 />
               </div>
 
-              {guideSettings.showCutMarks && (
-                <div className="space-y-2 pt-1 border-t border-slate-700/60">
-                  <div className="grid grid-cols-3 gap-1">
-                    <button
-                      onClick={() =>
-                        onUpdateGuideSettings({ cutMarkStyle: 'dashed' })
-                      }
-                      className={`py-1 text-xs rounded border text-center ${
-                        guideSettings.cutMarkStyle === 'dashed'
-                          ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200'
-                          : 'bg-slate-800 border-slate-700 text-slate-400'
-                      }`}
-                    >
-                      점선
-                    </button>
-                    <button
-                      onClick={() =>
-                        onUpdateGuideSettings({ cutMarkStyle: 'solid' })
-                      }
-                      className={`py-1 text-xs rounded border text-center ${
-                        guideSettings.cutMarkStyle === 'solid'
-                          ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200'
-                          : 'bg-slate-800 border-slate-700 text-slate-400'
-                      }`}
-                    >
-                      실선
-                    </button>
-                    <button
-                      onClick={() =>
-                        onUpdateGuideSettings({ cutMarkStyle: 'cropmarks' })
-                      }
-                      className={`py-1 text-xs rounded border text-center ${
-                        guideSettings.cutMarkStyle === 'cropmarks'
-                          ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200'
-                          : 'bg-slate-800 border-slate-700 text-slate-400'
-                      }`}
-                    >
-                      크롭마크
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===================== TAB 3: BATCH GLOBAL ADJUSTMENTS ===================== */}
-        {activeTab === 'batch' && (
-          <div className="space-y-4">
-            <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
-              <span className="font-bold block mb-0.5">15개 캐릭터 전체 일괄 조정</span>
-              모든 상의, 머리, 하의 위치 및 크기를 15개 전체에 동시 적용합니다.
-            </div>
-
-            <div className="bg-slate-800/40 p-3.5 rounded-xl border border-slate-700/80 space-y-4">
+              {/* Step scale buttons */}
               <div>
-                <span className="font-semibold text-sky-300 text-xs block mb-1.5">
-                  전체 상의 상하 이동 (높낮이)
-                </span>
-                <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 block mb-1">미세 확대 / 축소 버튼</span>
+                <div className="grid grid-cols-5 gap-1 text-[11px] font-semibold">
                   <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        body: { ...p.body, y: p.body.y - 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                    onClick={() => handleBatchScaleDelta(-0.05)}
+                    className="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition"
+                    title="전체 5% 축소"
                   >
-                    위로 (-3px)
+                    -5%
                   </button>
                   <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        body: { ...p.body, y: p.body.y + 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                    onClick={() => handleBatchScaleDelta(-0.02)}
+                    className="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition"
+                    title="전체 2% 축소"
                   >
-                    아래로 (+3px)
+                    -2%
                   </button>
                   <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        body: { ...p.body, y: 0 },
-                      }))
-                    }
-                    className="ml-auto text-xs text-slate-400 hover:text-white"
+                    onClick={() => handleBatchScaleExact(1.0)}
+                    className="py-1 bg-purple-600 hover:bg-purple-500 text-white rounded shadow transition font-bold"
+                    title="전체 100% 원본 크기로 복원"
                   >
-                    리셋
+                    100%
+                  </button>
+                  <button
+                    onClick={() => handleBatchScaleDelta(0.02)}
+                    className="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition"
+                    title="전체 2% 확대"
+                  >
+                    +2%
+                  </button>
+                  <button
+                    onClick={() => handleBatchScaleDelta(0.05)}
+                    className="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition"
+                    title="전체 5% 확대"
+                  >
+                    +5%
                   </button>
                 </div>
               </div>
 
-              <div>
-                <span className="font-semibold text-purple-300 text-xs block mb-1.5">
-                  전체 머리 상하 이동 (목 깊이)
-                </span>
-                <div className="flex items-center gap-2">
+              {/* Quick Presets */}
+              <div className="flex items-center gap-1 pt-1">
+                <span className="text-[10px] text-slate-400">빠른 비율:</span>
+                {[80, 90, 100, 110, 120].map((val) => (
                   <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        head: { ...p.head, y: p.head.y - 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                    key={val}
+                    onClick={() => handleBatchScaleExact(val / 100)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${
+                      avgScale === val
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
                   >
-                    위로 (-3px)
+                    {val}%
                   </button>
-                  <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        head: { ...p.head, y: p.head.y + 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
-                  >
-                    아래로 (+3px)
-                  </button>
-                  <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        head: { ...p.head, y: 0 },
-                      }))
-                    }
-                    className="ml-auto text-xs text-slate-400 hover:text-white"
-                  >
-                    리셋
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <span className="font-semibold text-pink-300 text-xs block mb-1.5">
-                  전체 하의 상하 이동 (허리 연결)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        leg: { ...p.leg, y: p.leg.y - 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
-                  >
-                    위로 (-3px)
-                  </button>
-                  <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        leg: { ...p.leg, y: p.leg.y + 3 },
-                      }))
-                    }
-                    className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs"
-                  >
-                    아래로 (+3px)
-                  </button>
-                  <button
-                    onClick={() =>
-                      onBatchUpdateConfigs((p) => ({
-                        ...p,
-                        leg: { ...p.leg, y: 0 },
-                      }))
-                    }
-                    className="ml-auto text-xs text-slate-400 hover:text-white"
-                  >
-                    리셋
-                  </button>
-                </div>
+                ))}
               </div>
             </div>
 
-            <button
-              onClick={onResetAllConfigs}
-              className="w-full py-2.5 bg-slate-800 hover:bg-rose-900/30 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>15개 캐릭터 전체 위치 초기화</span>
-            </button>
-          </div>
+            {/* 2. Batch Position Controls (일괄 위치 변경) */}
+            <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                  일괄 위치 이동 ({totalSlots}개 전체)
+                </span>
+                {/* Step size */}
+                <div className="flex items-center gap-1 bg-slate-800 rounded p-0.5 border border-slate-700">
+                  {[1, 3, 10].map((step) => (
+                    <button
+                      key={step}
+                      onClick={() => setBatchStep(step)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                        batchStep === step
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {step}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Direction Pad */}
+              <div className="flex flex-col items-center gap-1 py-1">
+                <button
+                  onClick={() => handleBatchNudgePos(0, -batchStep)}
+                  className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1 font-semibold"
+                  title="전체 위로 이동"
+                >
+                  <ArrowUp className="w-4 h-4 text-indigo-400" />
+                  <span>↑ 위로 ({batchStep}px)</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleBatchNudgePos(-batchStep, 0)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1 font-semibold"
+                    title="전체 왼쪽으로 이동"
+                  >
+                    <ArrowLeft className="w-4 h-4 text-indigo-400" />
+                    <span>← 좌</span>
+                  </button>
+
+                  <button
+                    onClick={handleBatchResetPos}
+                    className="px-2.5 py-2 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white border border-slate-700 text-[10px]"
+                    title="전체 위치를 0,0 원점으로 초기화"
+                  >
+                    0,0 리셋
+                  </button>
+
+                  <button
+                    onClick={() => handleBatchNudgePos(batchStep, 0)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1 font-semibold"
+                    title="전체 오른쪽으로 이동"
+                  >
+                    <span>우 →</span>
+                    <ArrowRight className="w-4 h-4 text-indigo-400" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => handleBatchNudgePos(0, batchStep)}
+                  className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1 font-semibold"
+                  title="전체 아래로 이동"
+                >
+                  <ArrowDown className="w-4 h-4 text-indigo-400" />
+                  <span>↓ 아래로 ({batchStep}px)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Reset All for Selected Category */}
+            <div className="pt-2">
+              <button
+                onClick={handleBatchResetAll}
+                className="w-full py-2 bg-slate-800 hover:bg-red-950/40 text-slate-300 hover:text-red-300 rounded-lg text-xs font-semibold border border-slate-700 hover:border-red-800 transition flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>
+                  {batchCategory === 'face' && '😊 얼굴 15개 전체 오프셋 및 크기 초기화'}
+                  {(batchCategory === 'hair' || batchCategory === 'head') && '💇 헤어 15개 전체 오프셋 및 크기 초기화'}
+                  {batchCategory === 'body' && '👕 상의 15개 전체 오프셋 및 크기 초기화'}
+                  {batchCategory === 'leg' && '👖 하의 15개 전체 오프셋 및 크기 초기화'}
+                </span>
+              </button>
+            </div>
+          </>
         )}
       </div>
-    </aside>
+    </div>
   );
 };
