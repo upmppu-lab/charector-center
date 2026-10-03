@@ -989,6 +989,21 @@ export function analyzeAndAutoAlignPartTile(
     collarTopY = minY;
   }
 
+  if (category === 'fullbody') {
+    // 5. FULLBODY: Center horizontally, and align feet/ground to foot baseline
+    const targetFootY = tileCenterY + (anchorSettings.fullbodyFootY ?? anchorSettings.legFootY ?? 130);
+    const dx = Math.round(tileCenterX - bestCenterX);
+    const dy = Math.round(targetFootY - maxY);
+
+    return {
+      hasContent: true,
+      box: { minX, maxX, minY, maxY, width: contentW, height: contentH },
+      detectedAnchor: { x: bestCenterX, y: maxY },
+      offset: { x: dx, y: dy, scale: 1 },
+      description: `전신 발끝선 (${Math.round(bestCenterX)}, ${maxY}) 감지 → 바닥 기준선 정렬`,
+    };
+  }
+
   const targetNeckY = tileCenterY + (anchorSettings.outfitNeckY ?? anchorSettings.bodyNeckY ?? -95);
   const dx = Math.round(tileCenterX - bestCenterX);
   const dy = Math.round(targetNeckY - collarTopY);
@@ -1000,6 +1015,115 @@ export function analyzeAndAutoAlignPartTile(
     offset: { x: dx, y: dy, scale: 1 },
     description: `상의+하의 목끝점 (${Math.round(collarTopX)}, ${Math.round(collarTopY)}) 감지 → 목 기준선 상단 정렬`,
   };
+}
+
+/**
+ * Automatically splits 30 full-body character tiles (전신 캐릭터 30종) into separate
+ * Face (얼굴/머리 30종) and Outfit (상의+하의 의상 30종) tiles with clean margins.
+ */
+export function splitFullbodyTilesToFaceAndOutfit(
+  fullbodyTiles: HTMLCanvasElement[],
+  headCutRatio = 0.44
+): { faceTiles: HTMLCanvasElement[]; outfitTiles: HTMLCanvasElement[] } {
+  const faceTiles: HTMLCanvasElement[] = [];
+  const outfitTiles: HTMLCanvasElement[] = [];
+
+  fullbodyTiles.forEach((tile) => {
+    const w = tile.width;
+    const h = tile.height;
+    const ctx = tile.getContext('2d');
+    if (!ctx) {
+      faceTiles.push(tile);
+      outfitTiles.push(tile);
+      return;
+    }
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    let minY = h, maxY = -1, minX = w, maxX = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > 25) {
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+    }
+
+    if (maxY <= minY) {
+      faceTiles.push(tile);
+      outfitTiles.push(tile);
+      return;
+    }
+
+    const charH = maxY - minY;
+
+    // Search for the narrowest width (the neck) between 34% and 52% of character height
+    const searchStart = Math.round(minY + charH * 0.34);
+    const searchEnd = Math.round(minY + charH * 0.52);
+    let narrowestY = Math.round(minY + charH * headCutRatio);
+    let minSpan = w;
+
+    for (let y = searchStart; y <= searchEnd; y++) {
+      let rowMinX = w, rowMaxX = -1;
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > 25) {
+          if (x < rowMinX) rowMinX = x;
+          if (x > rowMaxX) rowMaxX = x;
+        }
+      }
+      if (rowMaxX >= rowMinX) {
+        const span = rowMaxX - rowMinX;
+        if (span < minSpan) {
+          minSpan = span;
+          narrowestY = y;
+        }
+      }
+    }
+
+    const neckCutY = narrowestY;
+
+    // 1. Create Face Canvas (top down to neckCutY + 12)
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = w;
+    faceCanvas.height = h;
+    const faceCtx = faceCanvas.getContext('2d');
+    if (faceCtx) {
+      faceCtx.drawImage(tile, 0, 0);
+      const faceImg = faceCtx.getImageData(0, 0, w, h);
+      const faceData = faceImg.data;
+      for (let y = neckCutY + 12; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          faceData[(y * w + x) * 4 + 3] = 0;
+        }
+      }
+      faceCtx.putImageData(faceImg, 0, 0);
+    }
+    faceTiles.push(faceCanvas);
+
+    // 2. Create Outfit Canvas (neckCutY - 6 down to maxY)
+    const outfitCanvas = document.createElement('canvas');
+    outfitCanvas.width = w;
+    outfitCanvas.height = h;
+    const outfitCtx = outfitCanvas.getContext('2d');
+    if (outfitCtx) {
+      outfitCtx.drawImage(tile, 0, 0);
+      const outfitImg = outfitCtx.getImageData(0, 0, w, h);
+      const outfitData = outfitImg.data;
+      for (let y = 0; y < Math.max(0, neckCutY - 6); y++) {
+        for (let x = 0; x < w; x++) {
+          outfitData[(y * w + x) * 4 + 3] = 0;
+        }
+      }
+      outfitCtx.putImageData(outfitImg, 0, 0);
+    }
+    outfitTiles.push(outfitCanvas);
+  });
+
+  return { faceTiles, outfitTiles };
 }
 
 /**
@@ -1099,6 +1223,7 @@ export function autoAlignAllTilesForCategory(
       ...config,
       [key]: analysis.offset,
       ...(key === 'hair' ? { head: analysis.offset } : {}),
+      ...(key === 'fullbody' ? { fullbody: analysis.offset } : {}),
     };
   });
 }
@@ -1256,6 +1381,8 @@ export function renderPartGridCanvas(
         ? config.hair || config.head
         : partCategory === 'outfit'
         ? config.outfit || config.body
+        : partCategory === 'fullbody'
+        ? config.fullbody || { x: 0, y: 0, scale: 1 }
         : partCategory === 'body'
         ? config.body || config.outfit
         : config.leg || config.outfit
@@ -1626,6 +1753,63 @@ export function renderPartGridCanvas(
         ctx.stroke();
         ctx.restore();
       }
+    } else if (partCategory === 'fullbody') {
+      // FULLBODY: GROUND ANCHOR (발끝 기준선) & CROWN / EYE / WAIST REFERENCE LINES
+      const footAnchorY = centerY + (anchorSettings.fullbodyFootY ?? anchorSettings.legFootY ?? 130);
+      const headTopY = centerY - 140;
+      const eyeNoseY = centerY - 65;
+      const waistY = centerY + 10;
+
+      if (guideSettings.showAnchorCrosshair) {
+        ctx.save();
+        ctx.strokeStyle = '#eab308'; // Amber / Gold Ground Line
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(box.x, footAnchorY);
+        ctx.lineTo(box.x + box.width, footAnchorY);
+        ctx.stroke();
+
+        // Crosshair center pip
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(centerX, footAnchorY, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(centerX, footAnchorY, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (guideSettings.showReferenceLines) {
+        ctx.save();
+        // Head crown reference (정수리 키선)
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.45)'; // Purple
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(box.x, headTopY);
+        ctx.lineTo(box.x + box.width, headTopY);
+        ctx.stroke();
+
+        // Eye / Face level reference (얼굴 시선)
+        ctx.strokeStyle = 'rgba(249, 115, 22, 0.45)'; // Orange
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(box.x, eyeNoseY);
+        ctx.lineTo(box.x + box.width, eyeNoseY);
+        ctx.stroke();
+
+        // Waist level reference (허리선)
+        ctx.strokeStyle = 'rgba(236, 72, 153, 0.35)'; // Pink
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(box.x, waistY);
+        ctx.lineTo(box.x + box.width, waistY);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // Number tag
@@ -1737,7 +1921,9 @@ export function renderAssembledCharacter(
   targetHeight = 900,
   layerOrder: 'hair-face-body-leg' | 'head-body-leg' | 'head-leg-body' = 'hair-face-body-leg',
   outfitTile?: HTMLCanvasElement | null,
-  outfitOffset?: { x: number; y: number; scale: number }
+  outfitOffset?: { x: number; y: number; scale: number },
+  fullbodyTile?: HTMLCanvasElement | null,
+  fullbodyOffset?: { x: number; y: number; scale: number }
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
@@ -1776,6 +1962,14 @@ export function renderAssembledCharacter(
 
     ctx.drawImage(tile, posX, posY, drawW, drawH);
   };
+
+  // If fullbodyTile is provided (전신 캐릭터 30종 일체형 모드)
+  if (fullbodyTile) {
+    const activeFullbodyOffset = fullbodyOffset || { x: 0, y: 0, scale: 1 };
+    const fullbodyCenterY = targetHeight * 0.50;
+    drawPart(fullbodyTile, activeFullbodyOffset, fullbodyCenterY, 360);
+    return canvas;
+  }
 
   // If outfitTile is provided (2-part mode: 얼굴 30종 + 상의/하의 의상 30종)
   if (outfitTile) {
@@ -1829,6 +2023,8 @@ export async function exportPartZip(
       ? `${actualCount}_top_pngs`
       : partCategory === 'outfit'
       ? `${actualCount}_outfit_top_bottom_pngs`
+      : partCategory === 'fullbody'
+      ? `${actualCount}_fullbody_character_pngs`
       : `${actualCount}_bottom_pngs`;
   const folder = zip.folder(folderName) || zip;
 
@@ -1841,6 +2037,8 @@ export async function exportPartZip(
       ? 'top'
       : partCategory === 'outfit'
       ? 'outfit'
+      : partCategory === 'fullbody'
+      ? 'character'
       : 'bottom';
 
   for (let i = 0; i < actualCount; i++) {
@@ -1857,6 +2055,8 @@ export async function exportPartZip(
         ? config.body
         : partCategory === 'outfit'
         ? config.outfit || config.body
+        : partCategory === 'fullbody'
+        ? config.fullbody || { x: 0, y: 0, scale: 1 }
         : config.leg
       : { x: 0, y: 0, scale: 1 };
 

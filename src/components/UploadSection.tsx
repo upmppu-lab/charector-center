@@ -19,7 +19,7 @@ interface UploadSectionProps {
   isOpen: boolean;
   onClose: () => void;
   sheets: UploadedSheets;
-  onUploadFile: (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit', file: File) => void;
+  onUploadFile: (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody', file: File) => void;
   onBatchUpload: (files: FileList | File[]) => void;
   onResetToDemo: () => void;
   processingSettings: ProcessingSettings;
@@ -31,8 +31,9 @@ interface UploadSectionProps {
   compositionMode?: CompositionMode;
   onSelectCompositionMode?: (mode: CompositionMode) => void;
   onSplitOutfitToTopBottom?: () => void;
+  onSplitFullbodyToFaceAndOutfit?: () => void;
   onAutoAlignAllParts?: () => void;
-  onOpenGridSliceModal?: (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit') => void;
+  onOpenGridSliceModal?: (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody') => void;
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
@@ -51,6 +52,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   compositionMode = '2part',
   onSelectCompositionMode,
   onSplitOutfitToTopBottom,
+  onSplitFullbodyToFaceAndOutfit,
   onAutoAlignAllParts,
   onOpenGridSliceModal,
 }) => {
@@ -60,6 +62,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const bodyInputRef = useRef<HTMLInputElement>(null);
   const legInputRef = useRef<HTMLInputElement>(null);
   const outfitInputRef = useRef<HTMLInputElement>(null);
+  const fullbodyInputRef = useRef<HTMLInputElement>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -147,6 +150,19 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     },
   ];
 
+  const slotsFullbody = [
+    {
+      type: 'fullbody' as const,
+      label: `통합 전신 캐릭터 시트 (${sheetMode}종)`,
+      subtext: `fullbody_sheet.png (${gridSubtext})`,
+      sheet: sheets.fullbodySheet,
+      fileName: sheets.fullbodyFileName,
+      ref: fullbodyInputRef,
+      badgeColor: 'border-purple-500/40 text-purple-300 bg-purple-500/10',
+      hint: '얼굴과 몸으로 나뉘지 않은 완성형 30종 캐릭터 시트입니다. 30칸 자동 슬라이스 및 발끝 바닥선 기준으로 일괄 정렬됩니다.',
+    },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
@@ -165,13 +181,21 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
                   compositionMode === '2part'
                     ? 'bg-pink-500/20 text-pink-300 border-pink-500/40'
+                    : compositionMode === 'fullbody'
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
                     : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                 }`}>
-                  {compositionMode === '2part' ? '👗 얼굴+상의/하의 2파트' : '🧩 4파트 모드'}
+                  {compositionMode === '2part'
+                    ? '👗 얼굴+상의/하의 2파트'
+                    : compositionMode === 'fullbody'
+                    ? '🧍 전신 캐릭터 30종 (일체형)'
+                    : '🧩 4파트 모드'}
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                {compositionMode === '2part'
+                {compositionMode === 'fullbody'
+                  ? `얼굴과 몸으로 나뉘지 않은 완성형 전신 캐릭터 ${sheetMode}종 시트를 등록하면 슬롯에 맞춰 자동 분할 및 바닥선 정렬됩니다.`
+                  : compositionMode === '2part'
                   ? `얼굴 시트와 상의+하의 시트 2개를 등록하면 ${sheetMode}개 슬롯에 맞춰 자동 분할 및 결합 정렬됩니다.`
                   : `얼굴, 헤어, 상의, 하의 4개 시트를 등록하면 ${sheetMode}개 슬롯에 맞춰 자동 분할 및 정렬됩니다.`}
               </p>
@@ -189,7 +213,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 custom-scrollbar">
           {/* Composition Mode & Sheet Count Controls */}
           <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
-            {/* Format Selection: 2-part vs 4-part */}
+            {/* Format Selection: 2-part vs Fullbody vs 4-part */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -201,28 +225,45 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => onSelectCompositionMode && onSelectCompositionMode('2part')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
                     compositionMode === '2part'
                       ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white border-pink-400 shadow-md ring-2 ring-pink-500/30'
                       : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span>👗 2파트 모드 (추천)</span>
+                    <span>👗 2파트 모드</span>
                   </div>
-                  <span className="text-[10px] font-normal opacity-90">
+                  <span className="text-[10px] font-normal opacity-90 text-center">
                     얼굴 30종 + 상의/하의(의상) 30종
                   </span>
                 </button>
 
                 <button
                   type="button"
+                  onClick={() => onSelectCompositionMode && onSelectCompositionMode('fullbody')}
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                    compositionMode === 'fullbody'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md ring-2 ring-purple-500/30'
+                      : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>🧍 전신 30종 일체형 (추천)</span>
+                  </div>
+                  <span className="text-[10px] font-normal opacity-90 text-center">
+                    얼굴+몸 나뉘지 않은 단일 시트
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => onSelectCompositionMode && onSelectCompositionMode('4part')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
                     compositionMode === '4part'
                       ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
                       : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
@@ -231,7 +272,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   <div className="flex items-center gap-1.5">
                     <span>🧩 4파트 모드</span>
                   </div>
-                  <span className="text-[10px] font-normal opacity-90">
+                  <span className="text-[10px] font-normal opacity-90 text-center">
                     얼굴 + 헤어 + 상의 + 하의 개별 4종
                   </span>
                 </button>
@@ -343,7 +384,96 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </div>
 
           {/* Individual Sheet Slots */}
-          {compositionMode === '2part' ? (
+          {compositionMode === 'fullbody' ? (
+            /* Fullbody Slot: Single 30-Character Sheet */
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 gap-3.5">
+                {slotsFullbody.map((s) => (
+                  <div
+                    key={s.type}
+                    className="p-4 sm:p-5 rounded-xl bg-slate-800/60 border border-purple-500/30 flex flex-col justify-between gap-3 relative overflow-hidden shadow-lg"
+                  >
+                    <input
+                      ref={s.ref}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) onUploadFile(s.type, file);
+                      }}
+                    />
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span
+                          className={`text-xs font-semibold px-2.5 py-0.5 rounded border inline-block mb-1.5 ${s.badgeColor}`}
+                        >
+                          {s.label}
+                        </span>
+                        <p className="text-sm font-bold text-white truncate max-w-[340px]">
+                          {s.fileName || s.subtext}
+                        </p>
+                        <p className="text-xs text-slate-300 mt-1">{s.hint}</p>
+                      </div>
+                      {s.sheet && (
+                        <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-slate-700/60">
+                      <button
+                        type="button"
+                        onClick={() => s.ref.current?.click()}
+                        className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                      >
+                        <FileImage className="w-4 h-4" />
+                        <span>{s.sheet ? '전신 시트 파일 변경' : '전신 시트 파일 선택'}</span>
+                      </button>
+
+                      {s.sheet && onOpenGridSliceModal && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenGridSliceModal('fullbody')}
+                          className="py-2 px-3 bg-cyan-950/70 hover:bg-cyan-900/90 text-cyan-200 rounded-lg text-xs font-semibold border border-cyan-500/50 transition flex items-center gap-1.5"
+                          title="전신 시트의 30칸 간격과 여백을 자동 계산하거나 미세 조정합니다."
+                        >
+                          <Grid className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>30칸 간격 자동 계산</span>
+                        </button>
+                      )}
+
+                      {onSplitFullbodyToFaceAndOutfit && (
+                        <button
+                          type="button"
+                          onClick={onSplitFullbodyToFaceAndOutfit}
+                          className="py-2 px-3.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md active:scale-95 border border-pink-400/40"
+                          title="전신 캐릭터 30종에서 얼굴과 의상을 지능적으로 잘라내어 2파트 조합 모드로 변환합니다."
+                        >
+                          <Scissors className="w-3.5 h-3.5" />
+                          <span>얼굴 + 의상(몸) 자동 분할</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Helpful Guide Banner for Fullbody Mode */}
+              <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-800/40 flex items-start gap-2.5 text-xs text-purple-200">
+                <Info className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-white">전신 캐릭터 30종 시트 활용 안내:</p>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    1. <b>전신 정렬</b>: 30개 캐릭터의 발끝 바닥선과 수직 중심선, 키 높이를 균일하게 맞추어 바로 다운로드할 수 있습니다.<br />
+                    2. <b>얼굴+몸 자동 분할</b>: [얼굴+의상 자동 분할] 버튼을 누르면 AI 윤곽선 분석으로 30개의 얼굴과 30개의 의상으로 쪼개어, 캐릭터 선택창에서 얼굴과 옷을 마음대로 바꿔 입힐 수 있습니다!
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : compositionMode === '2part' ? (
             /* 2-Part Slots: Face + Outfit (상의+하의) */
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {slots2Part.map((s) => (

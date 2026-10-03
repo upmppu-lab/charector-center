@@ -15,6 +15,7 @@ import {
   exportPartZip,
   getGridDimensions,
   renderPartGridCanvas,
+  splitFullbodyTilesToFaceAndOutfit,
   splitOutfitTilesToTopAndBottom,
 } from '../utils/imageProcessor';
 import {
@@ -39,6 +40,7 @@ interface ExportModalProps {
   legTiles: HTMLCanvasElement[];
   headTiles?: HTMLCanvasElement[]; // 호환성
   outfitTiles?: HTMLCanvasElement[]; // 상의+하의 30종
+  fullbodyTiles?: HTMLCanvasElement[]; // 전신 캐릭터 30종
   slotConfigs: SlotConfig[];
   anchorSettings: AnchorSettings;
   guideSettings: GuideDisplaySettings;
@@ -56,6 +58,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   legTiles,
   headTiles,
   outfitTiles,
+  fullbodyTiles,
   slotConfigs,
   anchorSettings,
   guideSettings,
@@ -71,9 +74,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const actualHairTiles = hairTiles && hairTiles.length > 0 ? hairTiles : (headTiles || []);
   const actualOutfitTiles = outfitTiles && outfitTiles.length > 0 ? outfitTiles : bodyTiles;
+  const actualFullbodyTiles = fullbodyTiles && fullbodyTiles.length > 0 ? fullbodyTiles : [];
   const actualCount =
     sheetMode ||
-    Math.max(faceTiles.length, actualHairTiles.length, bodyTiles.length, legTiles.length, actualOutfitTiles.length, 15);
+    Math.max(faceTiles.length, actualHairTiles.length, bodyTiles.length, legTiles.length, actualOutfitTiles.length, actualFullbodyTiles.length, 15);
 
   const triggerDownload = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -84,6 +88,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  // 0. Export Fullbody Characters PNGs (전신 캐릭터 30종)
+  const handleExportFullbodyZip = async () => {
+    setIsExporting(true);
+    setExportSuccessMsg(null);
+    try {
+      const blob = await exportPartZip('fullbody', actualFullbodyTiles, slotConfigs, targetSize, actualCount);
+      triggerDownload(blob, `${actualCount}_fullbody_characters_${targetSize}px.zip`);
+      setExportSuccessMsg(`전신 캐릭터 ${actualCount}개 PNG 파일 압축 다운로드가 완료되었습니다!`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // 1. Export Face PNGs
@@ -251,6 +270,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         ? bodyTiles
         : part === 'outfit'
         ? actualOutfitTiles
+        : part === 'fullbody'
+        ? actualFullbodyTiles
         : legTiles;
 
     const { rows, cols } = getGridDimensions(sheetMode, processingSettings.grid30Layout);
@@ -289,6 +310,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         ? 'top'
         : part === 'outfit'
         ? 'outfit'
+        : part === 'fullbody'
+        ? 'character_fullbody'
         : 'bottom';
 
     downloadCanvas(canvas, `${prefix}_aligned_${sheetMode}sheet.png`);
@@ -308,11 +331,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 게임 에셋 내보내기 (Export Assets)
                 <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-semibold">
-                  {compositionMode === '2part' ? `2파트 모드 (${actualCount}종)` : `4파트 모드 (${actualCount}종)`}
+                  {compositionMode === 'fullbody'
+                    ? `전신 캐릭터 (${actualCount}종)`
+                    : compositionMode === '2part'
+                    ? `2파트 모드 (${actualCount}종)`
+                    : `4파트 모드 (${actualCount}종)`}
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                {compositionMode === '2part'
+                {compositionMode === 'fullbody'
+                  ? `전신 캐릭터 ${actualCount}종 개별 PNG, 얼굴+의상 분할 패키지, 또는 정렬된 통합 스프라이트 시트를 내보냅니다.`
+                  : compositionMode === '2part'
                   ? `얼굴 ${actualCount}종, 상의+하의 ${actualCount}종 개별 PNG 또는 완성형 캐릭터를 원하는 해상도로 내보냅니다.`
                   : `얼굴, 헤어, 상의, 하의 ${actualCount}개 개별 PNG 또는 풀 패키지를 원하는 해상도로 내보냅니다.`}
               </p>
@@ -371,7 +400,75 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               📁 파트별 {actualCount}개 개별 PNG 압축 다운로드
             </span>
 
-            {compositionMode === '2part' ? (
+            {compositionMode === 'fullbody' ? (
+              /* Fullbody Mode: Single 30-character sheet exports */
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Fullbody PNGs */}
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-purple-500/40 flex flex-col justify-between gap-3 shadow-lg">
+                  <div>
+                    <span className="text-xs font-bold text-purple-300 block mb-1">
+                      🧍 전신 캐릭터 {actualCount}개 투명 PNG (ZIP)
+                    </span>
+                    <p className="text-[11px] text-slate-400">
+                      발끝 바닥선 및 수직 중앙 완벽 정렬<br />
+                      character_01.png ~ character_{String(actualCount).padStart(2, '0')}.png ({targetSize}x{targetSize}px)
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleExportFullbodyZip}
+                    disabled={isExporting}
+                    className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <FileArchive className="w-4 h-4" />
+                    <span>{isExporting ? '압축 중...' : `전신 캐릭터 ${actualCount}개 ZIP 다운로드`}</span>
+                  </button>
+                </div>
+
+                {/* Split to Face & Outfit ZIP */}
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-pink-500/40 flex flex-col justify-between gap-3 shadow-lg">
+                  <div>
+                    <span className="text-xs font-bold text-pink-300 block mb-1">
+                      ✂️ 얼굴 + 의상 자동 분할 {actualCount * 2}개 PNG (ZIP)
+                    </span>
+                    <p className="text-[11px] text-slate-400">
+                      목선을 지능적으로 분리하여 얼굴과 의상으로 나눔<br />
+                      얼굴 {actualCount}개 + 의상 {actualCount}개 패키지
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setIsExporting(true);
+                      setExportSuccessMsg(null);
+                      try {
+                        const { faceTiles: splitFaces, outfitTiles: splitOutfits } = splitFullbodyTilesToFaceAndOutfit(actualFullbodyTiles);
+                        const blob = await exportAllPartsZip(
+                          splitFaces,
+                          [],
+                          [],
+                          [],
+                          slotConfigs,
+                          anchorSettings,
+                          targetSize,
+                          actualCount,
+                          splitOutfits
+                        );
+                        triggerDownload(blob, `${actualCount}_split_face_and_outfit_package.zip`);
+                        setExportSuccessMsg(`얼굴 ${actualCount}개 + 의상 ${actualCount}개 분할 ZIP 다운로드 완료!`);
+                      } catch (e) {
+                        console.error(e);
+                      } finally {
+                        setIsExporting(false);
+                      }
+                    }}
+                    disabled={isExporting}
+                    className="w-full py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white rounded-lg text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Scissors className="w-4 h-4" />
+                    <span>{isExporting ? '압축 중...' : `얼굴+의상 분할 패키지 ZIP`}</span>
+                  </button>
+                </div>
+              </div>
+            ) : compositionMode === '2part' ? (
               /* 2-Part Mode: Face + Outfit (상의+하의) + Auto-split */
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Face */}

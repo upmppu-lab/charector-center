@@ -19,6 +19,7 @@ interface HeaderProps {
   onOpenUploadModal: (mode?: 15 | 30) => void;
   onOpenExportModal: () => void;
   onOpenGridSliceModal?: () => void;
+  onOpenFullbodySplitModal?: () => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onResetZoom: () => void;
@@ -33,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUploadModal,
   onOpenExportModal,
   onOpenGridSliceModal,
+  onOpenFullbodySplitModal,
   zoom,
   onZoomChange,
   onResetZoom,
@@ -57,13 +59,21 @@ export const Header: React.FC<HeaderProps> = ({
               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
                 compositionMode === '2part'
                   ? 'bg-pink-500/20 text-pink-300 border-pink-500/30'
+                  : compositionMode === 'fullbody'
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
                   : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
               }`}>
-                {compositionMode === '2part' ? '👗 얼굴+상의/하의 2파트' : '🧩 4파트 모드'}
+                {compositionMode === '2part'
+                  ? '👗 얼굴+상의/하의 2파트'
+                  : compositionMode === 'fullbody'
+                  ? '🧍 전신 캐릭터 30종 (일체형)'
+                  : '🧩 4파트 모드'}
               </span>
             </h1>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              {compositionMode === '2part'
+              {compositionMode === 'fullbody'
+                ? `전신 일체형 캐릭터 ${sheetMode}종(발끝/바닥선 기준) 분할 정렬, 실시간 감상 및 2파트 자동 분할`
+                : compositionMode === '2part'
                 ? `얼굴 ${sheetMode}종(코 중심) · 상의+하의 ${sheetMode}종(목선/허리 기준) 분할 정렬 및 실시간 조립`
                 : `얼굴 · 헤어 · 상의 · 하의 4종 모듈러 분할 정렬 및 실시간 조립 (${sheetMode}칸 지원)`}
             </p>
@@ -85,35 +95,73 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-bold">🎮 캐릭터 선택창</span>
           </button>
 
-          {/* Face tab (코 중심 사각형 중앙 배치) */}
-          <button
-            onClick={() => setActiveView('align-face')}
-            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
-              activeView === 'align-face'
-                ? 'bg-orange-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <span>😊</span>
-            <span>얼굴 정렬</span>
-          </button>
+          {compositionMode === 'fullbody' ? (
+            /* Fullbody Mode: align-fullbody + Split button */
+            <>
+              <button
+                onClick={() => setActiveView('align-fullbody')}
+                className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                  activeView === 'align-fullbody'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>🧍</span>
+                <span>전신 정렬</span>
+              </button>
 
-          {compositionMode === '2part' ? (
+              {onOpenFullbodySplitModal && (
+                <button
+                  onClick={onOpenFullbodySplitModal}
+                  className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold transition shadow-sm active:scale-95"
+                  title="전신 캐릭터 30종을 얼굴 30종과 의상 30종으로 자동 분할하여 2파트 조합 모드로 변환합니다."
+                >
+                  <span>✂️</span>
+                  <span>얼굴+몸 자동 분할</span>
+                </button>
+              )}
+            </>
+          ) : compositionMode === '2part' ? (
             /* 2-part mode: Top+Bottom combined outfit */
-            <button
-              onClick={() => setActiveView('align-outfit')}
-              className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
-                activeView === 'align-outfit' || activeView === 'align-body'
-                  ? 'bg-gradient-to-r from-sky-600 to-amber-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <span>👗</span>
-              <span>상의+하의 정렬</span>
-            </button>
+            <>
+              <button
+                onClick={() => setActiveView('align-face')}
+                className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                  activeView === 'align-face'
+                    ? 'bg-orange-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>😊</span>
+                <span>얼굴 정렬</span>
+              </button>
+              <button
+                onClick={() => setActiveView('align-outfit')}
+                className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                  activeView === 'align-outfit' || activeView === 'align-body'
+                    ? 'bg-gradient-to-r from-sky-600 to-amber-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>👗</span>
+                <span>상의+하의 정렬</span>
+              </button>
+            </>
           ) : (
             /* 4-part mode: Hair, Top, Bottom */
             <>
+              <button
+                onClick={() => setActiveView('align-face')}
+                className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
+                  activeView === 'align-face'
+                    ? 'bg-orange-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>😊</span>
+                <span>얼굴 정렬</span>
+              </button>
+
               <button
                 onClick={() => setActiveView('align-hair')}
                 className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition ${
@@ -153,7 +201,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Mode Switcher (2파트 vs 4파트) */}
+        {/* Mode Switcher (2파트 vs 전신 30종 vs 4파트) */}
         {onCompositionModeChange && (
           <div className="hidden lg:flex items-center bg-slate-800/80 p-0.5 rounded-lg border border-slate-700 text-[11px] font-semibold">
             <button
@@ -166,6 +214,17 @@ export const Header: React.FC<HeaderProps> = ({
               title="얼굴 30종 + 상의/하의 의상 30종 포맷"
             >
               <span>👗 2파트(얼굴+의상)</span>
+            </button>
+            <button
+              onClick={() => onCompositionModeChange('fullbody')}
+              className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${
+                compositionMode === 'fullbody'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="얼굴과 몸이 일체형인 전신 캐릭터 30종 시트 포맷"
+            >
+              <span>🧍 전신 30종(일체형)</span>
             </button>
             <button
               onClick={() => onCompositionModeChange('4part')}

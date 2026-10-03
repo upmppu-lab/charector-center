@@ -31,6 +31,7 @@ import {
   ArrowRight,
   Wand2,
   Layers,
+  Gamepad2,
 } from 'lucide-react';
 
 interface CanvasStageProps {
@@ -52,6 +53,7 @@ interface CanvasStageProps {
   rows?: number;
   cols?: number;
   sheetMode?: 15 | 30;
+  onNavigateToCustomizer?: () => void;
 }
 
 export const CanvasStage: React.FC<CanvasStageProps> = ({
@@ -73,6 +75,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   rows,
   cols,
   sheetMode = 15,
+  onNavigateToCustomizer,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -429,6 +432,18 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             <span>⚡ {totalSlots}개 일괄 조절</span>
           </button>
+
+          {/* Quick Return to Customizer Button */}
+          {onNavigateToCustomizer && (
+            <button
+              onClick={onNavigateToCustomizer}
+              className="ml-1 px-3 py-1 rounded-lg bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white border border-indigo-400/50 text-xs font-bold shadow-lg transition flex items-center gap-1.5 active:scale-95"
+              title="캐릭터 선택창으로 이동하여 상의와의 결합 상태를 바로 확인합니다."
+            >
+              <Gamepad2 className="w-3.5 h-3.5 text-pink-200" />
+              <span>🎮 캐릭터 선택창 복귀</span>
+            </button>
+          )}
         </div>
 
         {/* Quick Row Navigation Buttons (행 빠른 이동) */}
@@ -1007,6 +1022,17 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
+
+            {onNavigateToCustomizer && (
+              <button
+                onClick={onNavigateToCustomizer}
+                className="ml-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-[11px] shadow flex items-center gap-1 transition active:scale-95"
+                title="캐릭터 선택창으로 이동하여 상의와의 결합 확인"
+              >
+                <Gamepad2 className="w-3 h-3 text-pink-200" />
+                <span>선택창 확인</span>
+              </button>
+            )}
           </div>
         </div>
       )}

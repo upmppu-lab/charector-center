@@ -10,6 +10,7 @@ export const INITIAL_SLOT_CONFIGS: SlotConfig[] = Array.from({ length: 30 }, (_,
     body: { x: 0, y: 0, scale: 1 },
     leg: { x: 0, y: 0, scale: 1 },
     outfit: { x: 0, y: 0, scale: 1 },
+    fullbody: { x: 0, y: 0, scale: 1 },
     head: { x: 0, y: 0, scale: 1 },
     global: { x: 0, y: 0, scale: 1 },
     enabled: true,
@@ -23,6 +24,7 @@ export const DEFAULT_ANCHOR_SETTINGS: AnchorSettings = {
   bodyNeckY: -95,     // Neck joint anchor Y offset
   outfitNeckY: -95,   // Neck joint anchor for Outfit (상의+하의)
   legFootY: 130,      // Foot/Ground anchor Y offset
+  fullbodyFootY: 130, // Foot/Ground anchor for Fullbody
   neckJointGap: 0,    // Assembly neck adjustment
   waistJointGap: 0,   // Assembly waist adjustment
 };
@@ -77,14 +79,40 @@ export const CHARACTER_DESCRIPTIONS = [
   { id: 30, face: '영롱한 황금빛 눈매', hair: '로얄 프린세스 롱 컬', top: '골드 자수 벨벳 케이프 탑', bottom: '로열 골드 티어드 볼가운' },
 ];
 
-// Generates procedural fallback preview tiles for Face, Hair, Body, Leg, Outfit
+// Generates procedural fallback preview tiles for Face, Hair, Body, Leg, Outfit, Fullbody
 export function createMockTiles(
-  category: 'face' | 'hair' | 'body' | 'leg' | 'outfit',
+  category: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody',
   count = 15
 ): HTMLCanvasElement[] {
-  const tiles: HTMLCanvasElement[] = [];
   const tileW = 400;
   const tileH = 400;
+
+  if (category === 'fullbody') {
+    const faceMocks = createMockTiles('face', count);
+    const hairMocks = createMockTiles('hair', count);
+    const outfitMocks = createMockTiles('outfit', count);
+    const fullbodyTiles: HTMLCanvasElement[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = tileW;
+      canvas.height = tileH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      // Draw lower body/outfit
+      ctx.drawImage(outfitMocks[i], 0, 40, tileW, tileH);
+      // Draw face
+      ctx.drawImage(faceMocks[i], 0, -45, tileW, tileH);
+      // Draw hair
+      ctx.drawImage(hairMocks[i], 0, -45, tileW, tileH);
+
+      fullbodyTiles.push(canvas);
+    }
+    return fullbodyTiles;
+  }
+
+  const tiles: HTMLCanvasElement[] = [];
 
   const hairHues = [
     '#935133', '#c084fc', '#f472b6', '#38bdf8', '#fb923c',

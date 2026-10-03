@@ -23,6 +23,7 @@ import {
   Maximize2,
   Wand2,
   Layers,
+  Gamepad2,
 } from 'lucide-react';
 
 interface CharacterInspectorProps {
@@ -39,6 +40,7 @@ interface CharacterInspectorProps {
   tiles: HTMLCanvasElement[];
   anchorSettings: AnchorSettings;
   slotCount?: number;
+  onNavigateToCustomizer?: () => void;
 }
 
 export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
@@ -55,6 +57,7 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
   tiles,
   anchorSettings,
   slotCount = 15,
+  onNavigateToCustomizer,
 }) => {
   const [inspectorMode, setInspectorMode] = useState<'single' | 'batch'>('single');
   const [batchCategory, setBatchCategory] = useState<PartCategory>(partCategory);
@@ -77,6 +80,7 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
     body: { x: 0, y: 0, scale: 1 },
     leg: { x: 0, y: 0, scale: 1 },
     outfit: { x: 0, y: 0, scale: 1 },
+    fullbody: { x: 0, y: 0, scale: 1 },
     head: { x: 0, y: 0, scale: 1 },
     global: { x: 0, y: 0, scale: 1 },
     enabled: true,
@@ -164,6 +168,20 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
       ctx.beginPath();
       ctx.moveTo(0, 160 + 10 * (320 / 400));
       ctx.lineTo(320, 160 + 10 * (320 / 400));
+      ctx.stroke();
+      ctx.restore();
+    } else if (partCategory === 'fullbody') {
+      anchorY = 160 + (anchorSettings.fullbodyFootY ?? anchorSettings.legFootY ?? 130) * (320 / 400);
+      strokeColor = '#eab308'; // Amber Ground Line
+
+      // Draw head top and waist guidelines
+      ctx.save();
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, 160 - 130 * (320 / 400));
+      ctx.lineTo(320, 160 - 130 * (320 / 400));
       ctx.stroke();
       ctx.restore();
     } else {
@@ -271,6 +289,10 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
         ? 'hair'
         : partCategory === 'body'
         ? 'top'
+        : partCategory === 'outfit'
+        ? 'outfit'
+        : partCategory === 'fullbody'
+        ? 'character'
         : 'bottom';
     downloadCanvas(canvas, `${prefix}_${String(currentId).padStart(2, '0')}.png`);
   };
@@ -342,6 +364,19 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
         {inspectorMode === 'single' ? (
           /* ================= SINGLE SLOT MODE ================= */
           <>
+            {/* Quick Return to Customizer Button */}
+            {onNavigateToCustomizer && (
+              <button
+                type="button"
+                onClick={onNavigateToCustomizer}
+                className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-2 active:scale-95 border border-indigo-400/40"
+                title="캐릭터 선택창으로 이동하여 상의와의 결합 상태를 바로 확인합니다."
+              >
+                <Gamepad2 className="w-4 h-4 text-pink-200" />
+                <span>🎮 캐릭터 선택창에서 상의 결합 확인</span>
+              </button>
+            )}
+
             {/* Slot selector grid */}
             <div>
               <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
@@ -376,6 +411,10 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                     ? desc?.hair
                     : partCategory === 'body'
                     ? desc?.top
+                    : partCategory === 'outfit'
+                    ? `${desc?.top || ''} + ${desc?.bottom || ''}`
+                    : partCategory === 'fullbody'
+                    ? `전신 #${currentId} (${desc?.face || ''}, ${desc?.top || ''})`
                     : desc?.bottom}
                 </div>
               </div>
@@ -386,7 +425,7 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
               type="button"
               onClick={() => onAutoAlignSingle && onAutoAlignSingle(currentId, partCategory)}
               className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400/40"
-              title={`이 슬롯의 스프라이트를 분석하여 (${partCategory === 'face' ? '코 중심 사각형 중앙' : partCategory === 'hair' ? '코 기준점 결합' : partCategory === 'body' ? '목깃 상단' : '허리선'})에 자동 배치합니다`}
+              title={`이 슬롯의 스프라이트를 분석하여 (${partCategory === 'face' ? '코 중심 사각형 중앙' : partCategory === 'hair' ? '코 기준점 결합' : partCategory === 'body' || partCategory === 'outfit' ? '목깃 상단' : partCategory === 'fullbody' ? '발끝 바닥 기준선' : '허리선'})에 자동 배치합니다`}
             >
               <Wand2 className="w-3.5 h-3.5 text-amber-200" />
               <span>
@@ -395,8 +434,10 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                   ? '코 중심'
                   : partCategory === 'hair' || partCategory === 'head'
                   ? '헤어 결합'
-                  : partCategory === 'body'
+                  : partCategory === 'body' || partCategory === 'outfit'
                   ? '목끝 상단'
+                  : partCategory === 'fullbody'
+                  ? '발끝 바닥선'
                   : '허리선'}
                 )
               </span>
@@ -612,6 +653,19 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                 >
                   <span className="text-sm">👗</span>
                   <span>상의+하의</span>
+                </button>
+
+                <button
+                  onClick={() => setBatchCategory('fullbody')}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition flex flex-col items-center gap-0.5 border ${
+                    batchCategory === 'fullbody'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow'
+                      : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                  title="얼굴과 몸이 합쳐진 전신 캐릭터 30종 일괄 조절"
+                >
+                  <span className="text-sm">🧍</span>
+                  <span>전신</span>
                 </button>
               </div>
             </div>

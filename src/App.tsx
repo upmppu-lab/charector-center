@@ -26,6 +26,7 @@ import {
   getGridDimensions,
   sliceSpriteSheet,
   splitOutfitTilesToTopAndBottom,
+  splitFullbodyTilesToFaceAndOutfit,
 } from './utils/imageProcessor';
 import { Header } from './components/Header';
 import { CanvasStage } from './components/CanvasStage';
@@ -43,6 +44,7 @@ export default function App() {
     bodySheet: null,
     legSheet: null,
     outfitSheet: null,
+    fullbodySheet: null,
   });
 
   // User specifically requested: 얼굴 30종, 상의+하의 30종
@@ -52,13 +54,14 @@ export default function App() {
 
   // Per-sheet slice and gap configurations (margins, gutters, offsets)
   const [sheetSliceConfigs, setSheetSliceConfigs] = useState<Record<string, SheetSliceConfig>>({});
-  const [sliceModalTarget, setSliceModalTarget] = useState<'face' | 'hair' | 'body' | 'leg' | 'outfit' | null>(null);
+  const [sliceModalTarget, setSliceModalTarget] = useState<'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody' | null>(null);
 
   const [faceTiles, setFaceTiles] = useState<HTMLCanvasElement[]>([]);
   const [hairTiles, setHairTiles] = useState<HTMLCanvasElement[]>([]);
   const [bodyTiles, setBodyTiles] = useState<HTMLCanvasElement[]>([]);
   const [legTiles, setLegTiles] = useState<HTMLCanvasElement[]>([]);
   const [outfitTiles, setOutfitTiles] = useState<HTMLCanvasElement[]>([]);
+  const [fullbodyTiles, setFullbodyTiles] = useState<HTMLCanvasElement[]>([]);
 
   const [slotConfigs, setSlotConfigs] = useState<SlotConfig[]>(INITIAL_SLOT_CONFIGS);
   const [anchorSettings, setAnchorSettings] = useState<AnchorSettings>(DEFAULT_ANCHOR_SETTINGS);
@@ -81,19 +84,29 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
 
-  // Load demo mock tiles for all parts (얼굴 30종, 상의+하의 30종, 헤어, 상의, 하의)
+  // Synchronized selected parts for game character customizer
+  const [selectedFace, setSelectedFace] = useState<number>(1);
+  const [selectedHair, setSelectedHair] = useState<number>(1);
+  const [selectedTop, setSelectedTop] = useState<number>(1);
+  const [selectedBottom, setSelectedBottom] = useState<number>(1);
+  const [selectedOutfit, setSelectedOutfit] = useState<number>(1);
+  const [selectedFullbody, setSelectedFullbody] = useState<number>(1);
+
+  // Load demo mock tiles for all parts (얼굴 30종, 상의+하의 30종, 전신 30종, 헤어, 상의, 하의)
   const loadDemoAssets = useCallback((mode: SheetMode = sheetMode) => {
     const mockFaces = createMockTiles('face', mode);
     const mockHairs = createMockTiles('hair', mode);
     const mockBodies = createMockTiles('body', mode);
     const mockLegs = createMockTiles('leg', mode);
     const mockOutfits = createMockTiles('outfit', mode);
+    const mockFullbody = createMockTiles('fullbody', mode);
 
     setFaceTiles(mockFaces);
     setHairTiles(mockHairs);
     setBodyTiles(mockBodies);
     setLegTiles(mockLegs);
     setOutfitTiles(mockOutfits);
+    setFullbodyTiles(mockFullbody);
     setSlotConfigs(INITIAL_SLOT_CONFIGS);
     setAnchorSettings(DEFAULT_ANCHOR_SETTINGS);
   }, [sheetMode]);
@@ -198,6 +211,23 @@ export default function App() {
         );
         setLegTiles(sliced);
       }
+      if (currentSheets.fullbodySheet) {
+        const { rows, cols } = getGridDimensions(
+          mode,
+          layout,
+          currentSheets.fullbodySheet.width,
+          currentSheets.fullbodySheet.height
+        );
+        const sliced = sliceSpriteSheet(
+          currentSheets.fullbodySheet,
+          rows,
+          cols,
+          settings,
+          false,
+          configs.fullbody
+        );
+        setFullbodyTiles(sliced);
+      }
     },
     [sheetMode, grid30Layout, sheetSliceConfigs]
   );
@@ -206,7 +236,7 @@ export default function App() {
   const handleSelectSheetMode = (mode: SheetMode) => {
     setSheetMode(mode);
     const hasUploadedSheets = Boolean(
-      sheets.faceSheet || sheets.hairSheet || sheets.bodySheet || sheets.legSheet || sheets.outfitSheet
+      sheets.faceSheet || sheets.hairSheet || sheets.bodySheet || sheets.legSheet || sheets.outfitSheet || sheets.fullbodySheet
     );
     if (hasUploadedSheets) {
       refreshSlicedSheets(sheets, processingSettings, mode, grid30Layout);
@@ -224,10 +254,12 @@ export default function App() {
   };
 
   // Open interactive grid slicing gap calibration modal
-  const handleOpenSliceModal = (target?: 'face' | 'hair' | 'body' | 'leg' | 'outfit') => {
+  const handleOpenSliceModal = (target?: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody') => {
     let chosen = target;
     if (!chosen) {
-      if (compositionMode === '2part') {
+      if (compositionMode === 'fullbody') {
+        chosen = 'fullbody';
+      } else if (compositionMode === '2part') {
         chosen = sheets.outfitSheet ? 'outfit' : 'face';
       } else {
         chosen = (currentPartCategory as any) || 'face';
@@ -247,7 +279,7 @@ export default function App() {
     refreshSlicedSheets(sheets, processingSettings, sheetMode, grid30Layout, nextConfigs);
   };
 
-  const handleUploadFile = (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit', file: File) => {
+  const handleUploadFile = (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody', file: File) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -269,6 +301,11 @@ export default function App() {
         } else if (type === 'outfit') {
           updated.outfitSheet = img;
           updated.outfitFileName = file.name;
+        } else if (type === 'fullbody') {
+          updated.fullbodySheet = img;
+          updated.fullbodyFileName = file.name;
+          setCompositionMode('fullbody');
+          setActiveView('align-fullbody');
         } else if (type === 'hair') {
           updated.hairSheet = img;
           updated.hairFileName = file.name;
@@ -292,6 +329,15 @@ export default function App() {
       const name = file.name.toLowerCase();
       if (name.includes('face') || name.includes('얼굴') || name.includes('표정')) {
         handleUploadFile('face', file);
+      } else if (
+        name.includes('full') ||
+        name.includes('전신') ||
+        name.includes('통합') ||
+        name.includes('character') ||
+        name.includes('캐릭터') ||
+        name.includes('whole')
+      ) {
+        handleUploadFile('fullbody', file);
       } else if (
         name.includes('outfit') ||
         name.includes('의상') ||
@@ -319,6 +365,19 @@ export default function App() {
       }
     });
   };
+
+  // Auto-split fullbody tiles to Face (얼굴 30종) and Outfit (상의+하의 의상 30종)
+  const handleSplitFullbodyToFaceAndOutfit = useCallback(() => {
+    if (fullbodyTiles.length === 0) return;
+    const { faceTiles: splitFaces, outfitTiles: splitOutfits } = splitFullbodyTilesToFaceAndOutfit(fullbodyTiles);
+    setFaceTiles(splitFaces);
+    setOutfitTiles(splitOutfits);
+    setCompositionMode('2part');
+    // Lock auto-alignment on split parts
+    const alignedConfigs = autoAlignAllModularParts(splitFaces, [], [], [], slotConfigs, anchorSettings, splitOutfits);
+    setSlotConfigs(alignedConfigs);
+    setActiveView('game-customizer');
+  }, [fullbodyTiles, slotConfigs, anchorSettings]);
 
   // Auto-split outfit tiles to Top and Bottom
   const handleSplitOutfitToTopBottom = useCallback(() => {
@@ -439,6 +498,8 @@ export default function App() {
       ? 'body'
       : activeView === 'align-outfit'
       ? 'outfit'
+      : activeView === 'align-fullbody'
+      ? 'fullbody'
       : 'leg';
 
   const currentTiles =
@@ -450,9 +511,50 @@ export default function App() {
       ? bodyTiles
       : currentPartCategory === 'outfit'
       ? (outfitTiles.length > 0 ? outfitTiles : bodyTiles)
+      : currentPartCategory === 'fullbody'
+      ? fullbodyTiles
       : legTiles;
 
   const { rows, cols } = getGridDimensions(sheetMode, grid30Layout);
+
+  // Synchronized navigation between Game Customizer and Part Alignment stages
+  const handleNavigateToPartAlign = (category: PartCategory, slotId: number) => {
+    setActiveSlotId(slotId);
+    if (category === 'fullbody') {
+      setActiveView('align-fullbody');
+    } else if (category === 'face') {
+      setActiveView('align-face');
+    } else if (category === 'outfit') {
+      setActiveView(compositionMode === '2part' ? 'align-outfit' : 'align-body');
+    } else if (category === 'hair' || category === 'head') {
+      setActiveView('align-hair');
+    } else if (category === 'body') {
+      setActiveView('align-body');
+    } else if (category === 'leg') {
+      setActiveView('align-leg');
+    }
+  };
+
+  const handleNavigateToCustomizer = (slotId?: number, category?: PartCategory) => {
+    if (slotId) {
+      if (category === 'fullbody') {
+        setSelectedFullbody(slotId);
+      } else if (category === 'face') {
+        setSelectedFace(slotId);
+      } else if (category === 'outfit') {
+        setSelectedOutfit(slotId);
+      } else if (category === 'hair' || category === 'head') {
+        setSelectedHair(slotId);
+      } else if (category === 'body') {
+        setSelectedTop(slotId);
+      } else if (category === 'leg') {
+        setSelectedBottom(slotId);
+      } else {
+        setSelectedFace(slotId);
+      }
+    }
+    setActiveView('game-customizer');
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 overflow-hidden font-sans select-none">
@@ -463,6 +565,7 @@ export default function App() {
         onOpenUploadModal={handleOpenUploadModal}
         onOpenExportModal={() => setIsExportOpen(true)}
         onOpenGridSliceModal={() => handleOpenSliceModal()}
+        onOpenFullbodySplitModal={handleSplitFullbodyToFaceAndOutfit}
         zoom={zoom}
         onZoomChange={setZoom}
         onResetZoom={() => setZoom(sheetMode === 30 ? 0.32 : 0.38)}
@@ -474,13 +577,14 @@ export default function App() {
       {/* Main Body */}
       <div className="flex-1 flex overflow-hidden relative">
         {activeView === 'game-customizer' ? (
-          /* Live Game Character Customizer & Assembly View (2-part face 30 + outfit 30 or 4-part) */
+          /* Live Game Character Customizer & Assembly View (2-part face 30 + outfit 30 or fullbody 30 or 4-part) */
           <GameCharacterCustomizer
             faceTiles={faceTiles}
             hairTiles={hairTiles}
             bodyTiles={bodyTiles}
             legTiles={legTiles}
             outfitTiles={outfitTiles}
+            fullbodyTiles={fullbodyTiles}
             slotConfigs={slotConfigs}
             anchorSettings={anchorSettings}
             onUpdateAnchorSettings={(s) => setAnchorSettings((prev) => ({ ...prev, ...s }))}
@@ -490,9 +594,39 @@ export default function App() {
             compositionMode={compositionMode}
             onAutoAlignAllParts={handleAutoAlignAllParts}
             onOpenGridSliceModal={handleOpenSliceModal}
+            onNavigateToPartAlign={handleNavigateToPartAlign}
+            onUpdateSlotConfig={handleUpdateSlotConfig}
+            onAutoAlignSingleSlot={handleAutoAlignSingleSlot}
+            onResetSlotConfig={handleResetSlotConfig}
+            selectedFace={selectedFace}
+            onSelectFace={(id) => {
+              setSelectedFace(id);
+              setActiveSlotId(id);
+            }}
+            selectedHair={selectedHair}
+            onSelectHair={setSelectedHair}
+            selectedTop={selectedTop}
+            onSelectTop={setSelectedTop}
+            selectedBottom={selectedBottom}
+            onSelectBottom={setSelectedBottom}
+            selectedOutfit={selectedOutfit}
+            onSelectOutfit={(id) => {
+              setSelectedOutfit(id);
+              if (compositionMode === '2part') {
+                setActiveSlotId(id);
+              }
+            }}
+            selectedFullbody={selectedFullbody}
+            onSelectFullbody={(id) => {
+              setSelectedFullbody(id);
+              if (compositionMode === 'fullbody') {
+                setActiveSlotId(id);
+              }
+            }}
+            onSplitFullbodyToFaceAndOutfit={handleSplitFullbodyToFaceAndOutfit}
           />
         ) : (
-          /* Modular Part Alignment Stage (Face, Outfit, Hair, Body, or Leg) */
+          /* Modular Part Alignment Stage (Face, Outfit, Fullbody, Hair, Body, or Leg) */
           <div className="flex-1 flex overflow-hidden relative">
             <CanvasStage
               partCategory={currentPartCategory}
@@ -513,6 +647,7 @@ export default function App() {
               rows={rows}
               cols={cols}
               sheetMode={sheetMode}
+              onNavigateToCustomizer={() => handleNavigateToCustomizer(activeSlotId ?? undefined, currentPartCategory)}
             />
 
             {/* Sidebar Collapse Toggle Button */}
@@ -546,6 +681,7 @@ export default function App() {
                 tiles={currentTiles}
                 anchorSettings={anchorSettings}
                 slotCount={sheetMode}
+                onNavigateToCustomizer={() => handleNavigateToCustomizer(activeSlotId ?? undefined, currentPartCategory)}
               />
             )}
           </div>
@@ -578,11 +714,12 @@ export default function App() {
         compositionMode={compositionMode}
         onSelectCompositionMode={setCompositionMode}
         onSplitOutfitToTopBottom={handleSplitOutfitToTopBottom}
+        onSplitFullbodyToFaceAndOutfit={handleSplitFullbodyToFaceAndOutfit}
         onAutoAlignAllParts={handleAutoAlignAllParts}
         onOpenGridSliceModal={handleOpenSliceModal}
       />
 
-      {/* Export Modal with Individual PNGs ZIP options for 15 or 30 slots, face 30, outfit 30 */}
+      {/* Export Modal with Individual PNGs ZIP options for 15 or 30 slots, face 30, outfit 30, fullbody 30 */}
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
@@ -591,6 +728,7 @@ export default function App() {
         bodyTiles={bodyTiles}
         legTiles={legTiles}
         outfitTiles={outfitTiles}
+        fullbodyTiles={fullbodyTiles}
         slotConfigs={slotConfigs}
         anchorSettings={anchorSettings}
         guideSettings={guideSettings}
@@ -609,6 +747,8 @@ export default function App() {
               ? sheets.faceSheet
               : sliceModalTarget === 'outfit'
               ? sheets.outfitSheet || sheets.bodySheet
+              : sliceModalTarget === 'fullbody'
+              ? sheets.fullbodySheet || null
               : sliceModalTarget === 'hair'
               ? sheets.hairSheet
               : sliceModalTarget === 'body'
@@ -620,6 +760,8 @@ export default function App() {
               ? '얼굴 시트'
               : sliceModalTarget === 'outfit'
               ? '상의+하의(의상) 시트'
+              : sliceModalTarget === 'fullbody'
+              ? '통합 전신 캐릭터 시트'
               : sliceModalTarget === 'hair'
               ? '헤어 시트'
               : sliceModalTarget === 'body'
