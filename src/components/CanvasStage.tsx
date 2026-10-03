@@ -47,6 +47,7 @@ interface CanvasStageProps {
   onUpdateSlotConfig: (id: number, updater: (prev: SlotConfig) => SlotConfig) => void;
   onBatchUpdateConfigs: (updater: (prev: SlotConfig) => SlotConfig) => void;
   onAutoAlignCategory?: (category: PartCategory) => void;
+  onAutoAlignToFirst?: (category: PartCategory) => void;
   onAutoAlignAllParts?: () => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -69,6 +70,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   onUpdateSlotConfig,
   onBatchUpdateConfigs,
   onAutoAlignCategory,
+  onAutoAlignToFirst,
   onAutoAlignAllParts,
   zoom,
   onZoomChange,
@@ -88,6 +90,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const [showBatchControls, setShowBatchControls] = useState(false);
   const [batchCategory, setBatchCategory] = useState<PartCategory>(partCategory);
   const [batchStep, setBatchStep] = useState<number>(3);
+  const [alignToast, setAlignToast] = useState<string | null>(null);
 
   // Grid dimensions
   const actualRows = rows || (sheetMode === 30 ? 5 : 3);
@@ -376,6 +379,16 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeSlotId, partCategory, onUpdateSlotConfig]);
 
+  const handleTriggerAutoAlignToFirst = () => {
+    if (onAutoAlignToFirst) {
+      onAutoAlignToFirst(partCategory);
+    } else if (onAutoAlignCategory) {
+      onAutoAlignCategory(partCategory);
+    }
+    setAlignToast(`🎯 1번 캐릭터를 기준으로 전체 ${totalSlots}개 캐릭터가 자동 중앙 정렬되었습니다!`);
+    setTimeout(() => setAlignToast(null), 3500);
+  };
+
   const activeConfig = slotConfigs.find((s) => s.id === activeSlotId);
   const activePartOffset = activeConfig
     ? partCategory === 'outfit'
@@ -385,6 +398,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
   return (
     <div className="relative flex-1 w-full h-full bg-slate-950 overflow-hidden flex flex-col select-none">
+      {/* Toast Notification for Auto-alignment */}
+      {alignToast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 border border-amber-300/50 text-white text-xs font-bold shadow-2xl backdrop-blur flex items-center gap-2 animate-bounce">
+          <Sparkles className="w-4 h-4 text-amber-100" />
+          <span>{alignToast}</span>
+        </div>
+      )}
+
       {/* Top Floating Control Bar: Part info & Row navigation buttons */}
       <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between gap-2 pointer-events-none">
         {/* Category banner */}
@@ -409,16 +430,29 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               {partCategory === 'body' && `👕 ${totalSlots}종 상의 정렬 — 기준점: 🔵 목끝 결합선`}
               {partCategory === 'outfit' && `👗 ${totalSlots}종 상의+하의 정렬 — 기준점: 🔵 목선(상단) & 🌸 허리선`}
               {partCategory === 'leg' && `👖 ${totalSlots}종 하의 정렬 — 기준점: 🟡 발끝/바닥선`}
+              {partCategory === 'fullbody' && `🧍 ${totalSlots}종 전신 캐릭터 정렬 — 1번 캐릭터 기준: 🟡 발끝선 & 🔵 중심축`}
             </span>
           </div>
 
+          {/* 1번 캐릭터 기준 전체 자동 중앙/바닥 정렬 버튼 */}
           <button
+            type="button"
+            onClick={handleTriggerAutoAlignToFirst}
+            className="ml-2 px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold text-xs shadow-lg shadow-amber-500/25 transition flex items-center gap-1.5 active:scale-95 border border-amber-300/40"
+            title="1번 첫 번째 캐릭터의 중심축과 발끝선에 맞춰 전체 캐릭터를 똑같이 자동 중앙/바닥 정렬합니다."
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+            <span>🎯 1번 캐릭터처럼 자동 중앙 정렬</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onAutoAlignCategory && onAutoAlignCategory(partCategory)}
-            className="ml-2 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 text-xs font-bold shadow-lg shadow-emerald-500/30 transition flex items-center gap-1.5"
-            title={`현재 파트(${partCategory === 'face' ? '얼굴: 코 중심' : partCategory === 'hair' ? '헤어: 코 기준' : partCategory === 'body' ? '상의: 목끝' : '하의: 허리'}) ${totalSlots}개 전체를 자동 분석하여 기준점에 배치합니다`}
+            className="ml-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 text-xs font-bold shadow-lg shadow-emerald-500/30 transition flex items-center gap-1.5"
+            title={`현재 파트 전체를 기준점에 자동 정렬합니다`}
           >
             <Wand2 className="w-3.5 h-3.5 text-amber-200" />
-            <span>🎯 스마트 자동 정렬</span>
+            <span>스마트 기준점 정렬</span>
           </button>
 
           <button
@@ -574,25 +608,36 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              얼굴은 코 중심을 정중앙에, 상의는 목깃을 맨 위에, 하의는 허리를 결합선에 맞추어 자동으로 배치합니다.
+              1번 캐릭터의 중심축과 발끝선에 맞춰 전체 캐릭터를 똑같이 자동 중앙/바닥 정렬하거나 파트별 기준선에 맞춥니다.
             </p>
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="space-y-1.5 pt-1">
               <button
                 type="button"
-                onClick={() => onAutoAlignCategory && onAutoAlignCategory(batchCategory)}
-                className="py-2 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition flex items-center justify-center gap-1.5"
+                onClick={() => handleTriggerAutoAlignToFirst()}
+                className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 border border-amber-300/40"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                <span>{batchCategory === 'face' ? '얼굴' : batchCategory === 'hair' ? '헤어' : batchCategory === 'body' ? '상의' : batchCategory === 'outfit' ? '상의+하의' : '하의'} {totalSlots}개 정렬</span>
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+                <span>🎯 1번 캐릭터 기준 전체 자동 중앙/바닥 정렬</span>
               </button>
-              <button
-                type="button"
-                onClick={() => onAutoAlignAllParts && onAutoAlignAllParts()}
-                className="py-2 px-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow transition flex items-center justify-center gap-1.5"
-              >
-                <Layers className="w-3.5 h-3.5 text-amber-200" />
-                <span>전체 파트 자동 결합</span>
-              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onAutoAlignCategory && onAutoAlignCategory(batchCategory)}
+                  className="py-2 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition flex items-center justify-center gap-1.5"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-amber-200" />
+                  <span>{batchCategory === 'face' ? '얼굴' : batchCategory === 'hair' ? '헤어' : batchCategory === 'body' ? '상의' : batchCategory === 'outfit' ? '상의+하의' : batchCategory === 'fullbody' ? '전신' : '하의'} {totalSlots}개 정렬</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAutoAlignAllParts && onAutoAlignAllParts()}
+                  className="py-2 px-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow transition flex items-center justify-center gap-1.5"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-200" />
+                  <span>전체 파트 자동 결합</span>
+                </button>
+              </div>
             </div>
           </div>
 

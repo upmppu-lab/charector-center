@@ -551,7 +551,7 @@ export function getSliceBoxes(
     customCellBoxes,
   } = config;
 
-  if (customCellBoxes && customCellBoxes.length === rows * cols) {
+  if (customCellBoxes && customCellBoxes.length > 0) {
     return customCellBoxes.map((box) => ({
       x: Math.max(0, Math.min(imgWidth - 1, box.x + offsetX)),
       y: Math.max(0, Math.min(imgHeight - 1, box.y + offsetY)),
@@ -592,8 +592,9 @@ export function sliceSpriteSheet(
 
   let activeConfig = sliceConfig || settings.sliceConfig;
 
-  // If no config provided or autoDetect is active, auto-calculate intervals!
-  if (!activeConfig || activeConfig.autoDetect || activeConfig.rows !== rows || activeConfig.cols !== cols) {
+  // If user provided customCellBoxes or explicit sliceConfig, ALWAYS preserve it!
+  const hasCustomBoxes = Boolean(activeConfig?.customCellBoxes && activeConfig.customCellBoxes.length > 0);
+  if (!activeConfig || (!hasCustomBoxes && activeConfig.autoDetect)) {
     activeConfig = autoCalculateSpriteGrid(img, rows, cols, settings.tolerance);
   }
 
@@ -1229,6 +1230,146 @@ export function autoAlignAllTilesForCategory(
 }
 
 /**
+ * Automatically aligns all tiles in the given category to match the exact center and baseline
+ * of the 1st character (Slot #1)!
+ * - Slot #1 serves as the gold standard anchor baseline template
+ * - Slot #1 itself is automatically centered on the center guideline if not manually adjusted.
+ * - All other slots (2~30) automatically center their horizontal axis and baseline
+ *   to match Slot #1 with pixel precision.
+ */
+export function autoAlignAllTilesToFirstCharacter(
+  category: PartCategory,
+  tiles: HTMLCanvasElement[],
+  slotConfigs: SlotConfig[],
+  anchorSettings: AnchorSettings
+): SlotConfig[] {
+  if (!tiles || tiles.length === 0) return slotConfigs;
+
+  const firstSlotKey = category === 'head' ? 'hair' : category;
+  const firstTile = tiles[0];
+  const firstAnalysis = analyzeAndAutoAlignPartTile(firstTile, category, anchorSettings);
+
+  // 1. Calculate 1st tile's ideal center and vertical alignment
+  const firstIdealDx = firstAnalysis.hasContent
+    ? Math.round(firstTile.width / 2 - firstAnalysis.detectedAnchor.x)
+    : 0;
+  const firstIdealDy = firstAnalysis.hasContent ? firstAnalysis.offset.y : 0;
+
+  const firstOffset = slotConfigs[0]?.[firstSlotKey] || { x: 0, y: 0, scale: 1 };
+
+  // If slot 1 has offset 0 (default unadjusted), center it automatically!
+  // If slot 1 was manually moved away from ideal center, propagate that user nudge.
+  const isDefaultUnset = (firstOffset.x === 0 && firstOffset.y === 0);
+  const userNudgeX = isDefaultUnset ? 0 : firstOffset.x - firstIdealDx;
+  const userNudgeY = isDefaultUnset ? 0 : firstOffset.y - firstIdealDy;
+
+  const targetFirstOffset = {
+    x: firstIdealDx + userNudgeX,
+    y: firstIdealDy + userNudgeY,
+    scale: firstOffset.scale || 1,
+  };
+
+  return slotConfigs.map((config, index) => {
+    const tile = tiles[index];
+    if (!tile) return config;
+
+    const key = category === 'head' ? 'hair' : category;
+
+    // Slot 1 is the reference template
+    if (index === 0) {
+      return {
+        ...config,
+        [key]: targetFirstOffset,
+        ...(key === 'hair' ? { head: targetFirstOffset } : {}),
+        ...(key === 'fullbody' ? { fullbody: targetFirstOffset } : {}),
+      };
+    }
+
+    const analysis = analyzeAndAutoAlignPartTile(tile, category, anchorSettings);
+    if (!analysis.hasContent) return config;
+
+    // 1. Horizontal Centering:
+    // Every tile centers its character at tile.width / 2, plus any user nudge applied to #1
+    const idealDx = Math.round(tile.width / 2 - analysis.detectedAnchor.x);
+    const targetDx = idealDx + userNudgeX;
+
+    // 2. Vertical Baseline:
+    // analysis.offset.y accurately positions:
+    // - fullbody/leg: feet at ground baseline
+    // - face/hair: nose at center crosshair
+    // - body/outfit: collar at neck line
+    const idealDy = analysis.offset.y;
+    const targetDy = idealDy + userNudgeY;
+
+    // 3. Scale: match #1's scale if customized, otherwise preserve slot scale
+    const targetScale = (firstOffset.scale && firstOffset.scale !== 1) ? firstOffset.scale : (config[key]?.scale || 1);
+
+    const newOffset = {
+      x: targetDx,
+      y: targetDy,
+      scale: targetScale,
+    };
+
+    return {
+      ...config,
+      [key]: newOffset,
+      ...(key === 'hair' ? { head: newOffset } : {}),
+      ...(key === 'fullbody' ? { fullbody: newOffset } : {}),
+    };
+  });
+}
+
+/**
+ * Aligns a single tile to match Slot #1's center and baseline
+ */
+export function autoAlignSingleTileToFirstCharacter(
+  category: PartCategory,
+  tileIndex: number,
+  tiles: HTMLCanvasElement[],
+  slotConfig: SlotConfig,
+  referenceSlotConfig: SlotConfig,
+  anchorSettings: AnchorSettings
+): SlotConfig {
+  const tile = tiles[tileIndex];
+  const firstTile = tiles[0];
+  if (!tile || !firstTile) return slotConfig;
+
+  const key = category === 'head' ? 'hair' : category;
+  const firstAnalysis = analyzeAndAutoAlignPartTile(firstTile, category, anchorSettings);
+  const firstIdealDx = firstAnalysis.hasContent
+    ? Math.round(firstTile.width / 2 - firstAnalysis.detectedAnchor.x)
+    : 0;
+  const firstIdealDy = firstAnalysis.hasContent ? firstAnalysis.offset.y : 0;
+  const firstOffset = referenceSlotConfig[key] || { x: 0, y: 0, scale: 1 };
+
+  const isDefaultUnset = (firstOffset.x === 0 && firstOffset.y === 0);
+  const userNudgeX = isDefaultUnset ? 0 : firstOffset.x - firstIdealDx;
+  const userNudgeY = isDefaultUnset ? 0 : firstOffset.y - firstIdealDy;
+
+  const analysis = analyzeAndAutoAlignPartTile(tile, category, anchorSettings);
+  if (!analysis.hasContent) return slotConfig;
+
+  const idealDx = Math.round(tile.width / 2 - analysis.detectedAnchor.x);
+  const targetDx = idealDx + userNudgeX;
+  const idealDy = analysis.offset.y;
+  const targetDy = idealDy + userNudgeY;
+  const targetScale = (firstOffset.scale && firstOffset.scale !== 1) ? firstOffset.scale : (slotConfig[key]?.scale || 1);
+
+  const newOffset = {
+    x: targetDx,
+    y: targetDy,
+    scale: targetScale,
+  };
+
+  return {
+    ...slotConfig,
+    [key]: newOffset,
+    ...(key === 'hair' ? { head: newOffset } : {}),
+    ...(key === 'fullbody' ? { fullbody: newOffset } : {}),
+  };
+}
+
+/**
  * Automatically analyzes all categories (Face, Hair, Top, Bottom, Outfit) for all 15 or 30 slots
  * and perfectly locks every character into a unified assembled character!
  */
@@ -1239,7 +1380,8 @@ export function autoAlignAllModularParts(
   legTiles: HTMLCanvasElement[],
   slotConfigs: SlotConfig[],
   anchorSettings: AnchorSettings,
-  outfitTiles?: HTMLCanvasElement[]
+  outfitTiles?: HTMLCanvasElement[],
+  fullbodyTiles?: HTMLCanvasElement[]
 ): SlotConfig[] {
   const actualHairTiles = hairTiles && hairTiles.length > 0 ? hairTiles : [];
 
@@ -1249,6 +1391,7 @@ export function autoAlignAllModularParts(
     const bodyTile = bodyTiles[i];
     const legTile = legTiles[i];
     const outfitTile = outfitTiles ? outfitTiles[i] : null;
+    const fullbodyTile = fullbodyTiles ? fullbodyTiles[i] : null;
 
     const faceOffset = faceTile
       ? analyzeAndAutoAlignPartTile(faceTile, 'face', anchorSettings).offset
@@ -1270,6 +1413,10 @@ export function autoAlignAllModularParts(
       ? analyzeAndAutoAlignPartTile(outfitTile, 'outfit', anchorSettings).offset
       : config.outfit || { x: 0, y: 0, scale: 1 };
 
+    const fullbodyOffset = fullbodyTile
+      ? analyzeAndAutoAlignPartTile(fullbodyTile, 'fullbody', anchorSettings).offset
+      : config.fullbody || { x: 0, y: 0, scale: 1 };
+
     return {
       ...config,
       face: faceOffset,
@@ -1277,6 +1424,7 @@ export function autoAlignAllModularParts(
       body: bodyOffset,
       leg: legOffset,
       outfit: outfitOffset,
+      fullbody: fullbodyOffset,
       head: hairOffset,
     };
   });

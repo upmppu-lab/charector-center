@@ -70,6 +70,7 @@ interface GameCharacterCustomizerProps {
   selectedFullbody?: number;
   onSelectFullbody?: (id: number) => void;
   onSplitFullbodyToFaceAndOutfit?: () => void;
+  onAutoAlignToFirst?: (category: PartCategory) => void;
 }
 
 export const GameCharacterCustomizer: React.FC<GameCharacterCustomizerProps> = ({
@@ -93,6 +94,7 @@ export const GameCharacterCustomizer: React.FC<GameCharacterCustomizerProps> = (
   onUpdateSlotConfig,
   onAutoAlignSingleSlot,
   onResetSlotConfig,
+  onAutoAlignToFirst,
   selectedFace: propFace,
   onSelectFace: propOnSelectFace,
   selectedHair: propHair,
@@ -758,6 +760,36 @@ export const GameCharacterCustomizer: React.FC<GameCharacterCustomizerProps> = (
           >
             <Wand2 className="w-3.5 h-3.5 text-amber-200" />
             <span>⚡ 스마트 자동 정렬</span>
+          </button>
+
+          {/* 🎯 1번 캐릭터처럼 자동 중앙 정렬 Button */}
+          <button
+            onClick={() => {
+              if (onAutoAlignToFirst) {
+                if (compositionMode === 'fullbody') {
+                  onAutoAlignToFirst('fullbody');
+                } else if (compositionMode === '2part') {
+                  onAutoAlignToFirst('face');
+                  onAutoAlignToFirst('outfit');
+                } else {
+                  onAutoAlignToFirst('face');
+                  onAutoAlignToFirst('hair');
+                  onAutoAlignToFirst('body');
+                  onAutoAlignToFirst('leg');
+                }
+              } else if (onAutoAlignAllParts) {
+                onAutoAlignAllParts();
+              }
+              setAutoAlignNotification(
+                `🎯 1번 캐릭터의 중심축과 기준선에 맞춰 전체 ${actualCount}개 캐릭터가 자동 중앙 정렬되었습니다!`
+              );
+              setTimeout(() => setAutoAlignNotification(null), 3500);
+            }}
+            className="px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white border border-amber-300/60 shadow-xl backdrop-blur text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-amber-500/25 ring-2 ring-amber-400/20"
+            title="1번 첫 번째 캐릭터의 중심축과 발끝선에 맞춰 전체 캐릭터를 똑같이 자동 중앙/바닥 정렬합니다."
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+            <span>🎯 1번 캐릭터처럼 자동 중앙 정렬</span>
           </button>
 
           {/* Randomizer */}

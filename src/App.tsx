@@ -22,6 +22,7 @@ import {
   analyzeAndAutoAlignPartTile,
   autoAlignAllModularParts,
   autoAlignAllTilesForCategory,
+  autoAlignAllTilesToFirstCharacter,
   autoCalculateSpriteGrid,
   getGridDimensions,
   sliceSpriteSheet,
@@ -122,114 +123,145 @@ export default function App() {
       settings: ProcessingSettings,
       mode: SheetMode = sheetMode,
       layout: Grid30Layout = grid30Layout,
-      overrideConfigs?: Record<string, SheetSliceConfig>
+      overrideConfigs?: Record<string, SheetSliceConfig>,
+      autoAlignTarget?: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody' | 'all'
     ) => {
       const configs = overrideConfigs || sheetSliceConfigs;
 
       if (currentSheets.faceSheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.faceSheet.width,
           currentSheets.faceSheet.height
         );
+        const effectiveRows = configs.face?.rows || gridDim.rows;
+        const effectiveCols = configs.face?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.faceSheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           true,
           configs.face
         );
         setFaceTiles(sliced);
+        if (autoAlignTarget === 'face' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('face', sliced, prev, anchorSettings));
+        }
       }
       if (currentSheets.outfitSheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.outfitSheet.width,
           currentSheets.outfitSheet.height
         );
+        const effectiveRows = configs.outfit?.rows || gridDim.rows;
+        const effectiveCols = configs.outfit?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.outfitSheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           false,
           configs.outfit
         );
         setOutfitTiles(sliced);
+        if (autoAlignTarget === 'outfit' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('outfit', sliced, prev, anchorSettings));
+        }
       }
       if (currentSheets.hairSheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.hairSheet.width,
           currentSheets.hairSheet.height
         );
+        const effectiveRows = configs.hair?.rows || gridDim.rows;
+        const effectiveCols = configs.hair?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.hairSheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           false,
           configs.hair
         );
         setHairTiles(sliced);
+        if (autoAlignTarget === 'hair' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('hair', sliced, prev, anchorSettings));
+        }
       }
       if (currentSheets.bodySheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.bodySheet.width,
           currentSheets.bodySheet.height
         );
+        const effectiveRows = configs.body?.rows || gridDim.rows;
+        const effectiveCols = configs.body?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.bodySheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           false,
           configs.body
         );
         setBodyTiles(sliced);
+        if (autoAlignTarget === 'body' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('body', sliced, prev, anchorSettings));
+        }
       }
       if (currentSheets.legSheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.legSheet.width,
           currentSheets.legSheet.height
         );
+        const effectiveRows = configs.leg?.rows || gridDim.rows;
+        const effectiveCols = configs.leg?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.legSheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           false,
           configs.leg
         );
         setLegTiles(sliced);
+        if (autoAlignTarget === 'leg' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('leg', sliced, prev, anchorSettings));
+        }
       }
       if (currentSheets.fullbodySheet) {
-        const { rows, cols } = getGridDimensions(
+        const gridDim = getGridDimensions(
           mode,
           layout,
           currentSheets.fullbodySheet.width,
           currentSheets.fullbodySheet.height
         );
+        const effectiveRows = configs.fullbody?.rows || gridDim.rows;
+        const effectiveCols = configs.fullbody?.cols || gridDim.cols;
         const sliced = sliceSpriteSheet(
           currentSheets.fullbodySheet,
-          rows,
-          cols,
+          effectiveRows,
+          effectiveCols,
           settings,
           false,
           configs.fullbody
         );
         setFullbodyTiles(sliced);
+        if (autoAlignTarget === 'fullbody' || autoAlignTarget === 'all') {
+          setSlotConfigs((prev) => autoAlignAllTilesToFirstCharacter('fullbody', sliced, prev, anchorSettings));
+        }
       }
     },
-    [sheetMode, grid30Layout, sheetSliceConfigs]
+    [sheetMode, grid30Layout, sheetSliceConfigs, anchorSettings]
   );
 
   // Switch between 15 and 30 sheet modes
@@ -276,7 +308,17 @@ export default function App() {
       [sliceModalTarget]: newConfig,
     };
     setSheetSliceConfigs(nextConfigs);
-    refreshSlicedSheets(sheets, processingSettings, sheetMode, grid30Layout, nextConfigs);
+
+    let nextLayout = grid30Layout;
+    if (newConfig.rows === 6 && newConfig.cols === 5) {
+      nextLayout = '5x6'; // 6 rows, 5 cols
+      setGrid30Layout('5x6');
+    } else if (newConfig.rows === 5 && newConfig.cols === 6) {
+      nextLayout = '6x5'; // 5 rows, 6 cols
+      setGrid30Layout('6x5');
+    }
+
+    refreshSlicedSheets(sheets, processingSettings, sheetMode, nextLayout, nextConfigs, sliceModalTarget);
   };
 
   const handleUploadFile = (type: 'face' | 'hair' | 'body' | 'leg' | 'outfit' | 'fullbody', file: File) => {
@@ -316,9 +358,10 @@ export default function App() {
           updated.legSheet = img;
           updated.legFileName = file.name;
         }
-        refreshSlicedSheets(updated, processingSettings, sheetMode, grid30Layout, nextConfigs);
+        refreshSlicedSheets(updated, processingSettings, sheetMode, grid30Layout, nextConfigs, type);
         return updated;
       });
+
       URL.revokeObjectURL(url);
     };
     img.src = url;
@@ -432,6 +475,8 @@ export default function App() {
           ? bodyTiles
           : category === 'outfit'
           ? (outfitTiles.length > 0 ? outfitTiles : bodyTiles)
+          : category === 'fullbody'
+          ? fullbodyTiles
           : legTiles;
 
       const tile = targetTiles[id - 1];
@@ -445,9 +490,10 @@ export default function App() {
         ...prev,
         [key]: result.offset,
         ...(key === 'hair' ? { head: result.offset } : {}),
+        ...(key === 'fullbody' ? { fullbody: result.offset } : {}),
       }));
     },
-    [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, anchorSettings]
+    [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, fullbodyTiles, anchorSettings]
   );
 
   // Smart Auto-Alignment: All 15 or 30 slots for current active category
@@ -462,6 +508,8 @@ export default function App() {
           ? bodyTiles
           : category === 'outfit'
           ? (outfitTiles.length > 0 ? outfitTiles : bodyTiles)
+          : category === 'fullbody'
+          ? fullbodyTiles
           : legTiles;
 
       const updated = autoAlignAllTilesForCategory(
@@ -472,21 +520,54 @@ export default function App() {
       );
       setSlotConfigs(updated);
     },
-    [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, slotConfigs, anchorSettings]
+    [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, fullbodyTiles, slotConfigs, anchorSettings]
   );
 
-  // Smart Auto-Alignment: All categories (Face + Hair + Top + Bottom / Outfit) for complete character assembly
+  // Auto-align all slots in current category to match the 1st character's exact center & ground level!
+  const handleAutoAlignToFirst = useCallback(
+    (category: PartCategory) => {
+      const targetTiles =
+        category === 'face'
+          ? faceTiles
+          : category === 'hair' || category === 'head'
+          ? hairTiles
+          : category === 'body'
+          ? bodyTiles
+          : category === 'outfit'
+          ? (outfitTiles.length > 0 ? outfitTiles : bodyTiles)
+          : category === 'fullbody'
+          ? fullbodyTiles
+          : legTiles;
+
+      if (!targetTiles || targetTiles.length === 0) return;
+
+      setSlotConfigs((prev) =>
+        autoAlignAllTilesToFirstCharacter(
+          category,
+          targetTiles,
+          prev,
+          anchorSettings
+        )
+      );
+    },
+    [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, fullbodyTiles, anchorSettings]
+  );
+
+  // Smart Auto-Alignment: All categories (Face + Hair + Top + Bottom / Outfit / Fullbody) for complete character assembly
   const handleAutoAlignAllParts = useCallback(() => {
-    const updated = autoAlignAllModularParts(
-      faceTiles,
-      hairTiles,
-      bodyTiles,
-      legTiles,
-      slotConfigs,
-      anchorSettings
+    setSlotConfigs((prev) =>
+      autoAlignAllModularParts(
+        faceTiles,
+        hairTiles,
+        bodyTiles,
+        legTiles,
+        prev,
+        anchorSettings,
+        outfitTiles,
+        fullbodyTiles
+      )
     );
-    setSlotConfigs(updated);
-  }, [faceTiles, hairTiles, bodyTiles, legTiles, slotConfigs, anchorSettings]);
+  }, [faceTiles, hairTiles, bodyTiles, legTiles, outfitTiles, fullbodyTiles, anchorSettings]);
 
   // Determine current active part category for the alignment stage
   const currentPartCategory: PartCategory =
@@ -623,6 +704,7 @@ export default function App() {
                 setActiveSlotId(id);
               }
             }}
+            onAutoAlignToFirst={handleAutoAlignToFirst}
             onSplitFullbodyToFaceAndOutfit={handleSplitFullbodyToFaceAndOutfit}
           />
         ) : (
@@ -641,6 +723,7 @@ export default function App() {
               onUpdateSlotConfig={handleUpdateSlotConfig}
               onBatchUpdateConfigs={handleBatchUpdateConfigs}
               onAutoAlignCategory={handleAutoAlignCategory}
+              onAutoAlignToFirst={handleAutoAlignToFirst}
               onAutoAlignAllParts={handleAutoAlignAllParts}
               zoom={zoom}
               onZoomChange={setZoom}
@@ -677,6 +760,7 @@ export default function App() {
                 onResetSlotConfig={handleResetSlotConfig}
                 onAutoAlignSingle={handleAutoAlignSingleSlot}
                 onAutoAlignCategory={handleAutoAlignCategory}
+                onAutoAlignToFirst={handleAutoAlignToFirst}
                 onAutoAlignAllParts={handleAutoAlignAllParts}
                 tiles={currentTiles}
                 anchorSettings={anchorSettings}
@@ -769,8 +853,8 @@ export default function App() {
               : '하의 시트'
           }
           sheetMode={sheetMode}
-          initialRows={rows}
-          initialCols={cols}
+          initialRows={sheetSliceConfigs[sliceModalTarget]?.rows || rows}
+          initialCols={sheetSliceConfigs[sliceModalTarget]?.cols || cols}
           currentSliceConfig={sheetSliceConfigs[sliceModalTarget]}
           onApplySliceConfig={handleApplySliceConfig}
           processingSettings={processingSettings}

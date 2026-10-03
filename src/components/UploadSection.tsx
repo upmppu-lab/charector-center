@@ -321,7 +321,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 <div className="pt-2 mt-2 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="text-slate-300 font-medium">30시트 배열 레이아웃:</span>
                   <div className="flex items-center gap-1.5">
-                    {(['auto', '6x5', '5x6'] as const).map((l) => (
+                    {(['auto', '5x6', '6x5'] as const).map((l) => (
                       <button
                         key={l}
                         type="button"
@@ -333,10 +333,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                         }`}
                       >
                         {l === 'auto'
-                          ? '자동 감지 (가로/세로 비율)'
-                          : l === '6x5'
-                          ? '5행 6열 (가로형 30개)'
-                          : '6행 5열 (세로형 30개)'}
+                          ? '자동 감지'
+                          : l === '5x6'
+                          ? '6행 × 5열 (30개)'
+                          : '5행 × 6열 (30개)'}
                       </button>
                     ))}
                   </div>

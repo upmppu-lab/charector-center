@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { CHARACTER_DESCRIPTIONS } from '../utils/sampleData';
 import {
+  autoAlignAllTilesToFirstCharacter,
   downloadCanvas,
   renderSinglePartTile,
 } from '../utils/imageProcessor';
@@ -36,6 +37,7 @@ interface CharacterInspectorProps {
   onResetSlotConfig: (id: number) => void;
   onAutoAlignSingle?: (id: number, category: PartCategory) => void;
   onAutoAlignCategory?: (category: PartCategory) => void;
+  onAutoAlignToFirst?: (category: PartCategory) => void;
   onAutoAlignAllParts?: () => void;
   tiles: HTMLCanvasElement[];
   anchorSettings: AnchorSettings;
@@ -53,6 +55,7 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
   onResetSlotConfig,
   onAutoAlignSingle,
   onAutoAlignCategory,
+  onAutoAlignToFirst,
   onAutoAlignAllParts,
   tiles,
   anchorSettings,
@@ -443,6 +446,39 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
               </span>
             </button>
 
+            {/* 1번 캐릭터 기준 정렬 버튼들 */}
+            <div className="flex flex-col gap-1.5">
+              {currentId !== 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tiles.length > 0) {
+                      const updated = autoAlignAllTilesToFirstCharacter(partCategory, tiles, slotConfigs, anchorSettings);
+                      const thisSlotConfig = updated.find((s) => s.id === currentId);
+                      if (thisSlotConfig) {
+                        onUpdateSlotConfig(currentId, () => thisSlotConfig);
+                      }
+                    }
+                  }}
+                  className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 border border-amber-300/40"
+                  title="1번 첫 번째 캐릭터의 중심축과 발끝선에 맞춰 이 캐릭터도 똑같이 중앙 및 기준선에 정렬합니다."
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-white" />
+                  <span>🎯 1번 캐릭터처럼 중앙/기준선 정렬</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onAutoAlignToFirst && onAutoAlignToFirst(partCategory)}
+                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-bold shadow transition flex items-center justify-center gap-1.5 active:scale-95 border border-amber-500/40"
+                title={`1번 캐릭터의 중심축과 발끝선에 맞춰 전체 ${totalSlots}개 캐릭터를 똑같이 자동 중앙/바닥 정렬합니다.`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>🎯 전체 {totalSlots}개 1번 기준 자동 중앙 정렬</span>
+              </button>
+            </div>
+
             {/* D-Pad Nudge Controls */}
             <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-800">
               <div className="flex items-center justify-between mb-2">
@@ -682,15 +718,24 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                얼굴은 코 중심을 정중앙에, 상의는 목깃을 맨 위에, 하의는 허리를 결합선에 맞추어 자동으로 배치합니다.
+                1번 캐릭터의 중심축과 발끝선에 맞춰 전체 캐릭터를 똑같이 자동 중앙/바닥 정렬하거나 파트별 기준선에 맞춥니다.
               </p>
               <div className="flex flex-col gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onAutoAlignToFirst ? onAutoAlignToFirst(batchCategory) : onAutoAlignCategory && onAutoAlignCategory(batchCategory)}
+                  className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold text-xs rounded-lg shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 border border-amber-300/40"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-white" />
+                  <span>🎯 1번 캐릭터 기준 전체 자동 정렬</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => onAutoAlignCategory && onAutoAlignCategory(batchCategory)}
                   className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400/40"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                  <Wand2 className="w-3.5 h-3.5 text-amber-200" />
                   <span>
                     {batchCategory === 'face'
                       ? '얼굴'
@@ -700,8 +745,10 @@ export const CharacterInspector: React.FC<CharacterInspectorProps> = ({
                       ? '상의'
                       : batchCategory === 'outfit'
                       ? '상의+하의 의상'
+                      : batchCategory === 'fullbody'
+                      ? '전신 캐릭터'
                       : '하의'}{' '}
-                    {totalSlots}개 전체 자동 정렬
+                    스마트 기준점 정렬
                   </span>
                 </button>
                 <button

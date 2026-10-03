@@ -83,6 +83,38 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
   const [dragInitialBox, setDragInitialBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const prevIsOpenRef = useRef<boolean>(false);
+
+  // Run Valley & Projection Auto-Calculation
+  const runAutoCalculation = useCallback(
+    (targetR: number, targetC: number) => {
+      if (!targetImage) return;
+      const detected = autoCalculateSpriteGrid(
+        targetImage,
+        targetR,
+        targetC,
+        processingSettings.tolerance
+      );
+
+      setRows(targetR);
+      setCols(targetC);
+      setMarginTop(detected.marginTop);
+      setMarginBottom(detected.marginBottom);
+      setMarginLeft(detected.marginLeft);
+      setMarginRight(detected.marginRight);
+      setGapX(detected.gapX);
+      setGapY(detected.gapY);
+      setOffsetX(0);
+      setOffsetY(0);
+      setCustomCellBoxes(detected.customCellBoxes);
+      setSelectedBoxIdx(null);
+
+      setAutoCalculatedMsg(
+        `자동 계산 완료: 상하여백 ${detected.marginTop}px/${detected.marginBottom}px, 좌우여백 ${detected.marginLeft}px/${detected.marginRight}px, ${targetR}행×${targetC}열 최적 절단선이 설정되었습니다.`
+      );
+    },
+    [targetImage, processingSettings.tolerance]
+  );
 
   // Run AI Connected Component Blob Detection
   const runAiBlobDetection = useCallback(() => {
@@ -102,40 +134,21 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
     } else {
       runAutoCalculation(rows, cols);
     }
-  }, [targetImage, rows, cols, processingSettings.tolerance]);
+  }, [targetImage, rows, cols, processingSettings.tolerance, runAutoCalculation]);
 
-  // Run Valley & Projection Auto-Calculation
-  const runAutoCalculation = useCallback(
-    (targetR: number = rows, targetC: number = cols) => {
-      if (!targetImage) return;
-      const detected = autoCalculateSpriteGrid(
-        targetImage,
-        targetR,
-        targetC,
-        processingSettings.tolerance
-      );
-
-      setRows(detected.rows);
-      setCols(detected.cols);
-      setMarginTop(detected.marginTop);
-      setMarginBottom(detected.marginBottom);
-      setMarginLeft(detected.marginLeft);
-      setMarginRight(detected.marginRight);
-      setGapX(detected.gapX);
-      setGapY(detected.gapY);
-      setOffsetX(0);
-      setOffsetY(0);
-      setCustomCellBoxes(detected.customCellBoxes);
-
-      setAutoCalculatedMsg(
-        `자동 계산 완료: 상하여백 ${detected.marginTop}px/${detected.marginBottom}px, 좌우여백 ${detected.marginLeft}px/${detected.marginRight}px, ${detected.rows}행×${detected.cols}열 최적 절단선이 설정되었습니다.`
-      );
+  // Switch grid layout directly without resetting custom state
+  const handleSwitchGrid = useCallback(
+    (targetR: number, targetC: number) => {
+      setRows(targetR);
+      setCols(targetC);
+      runAutoCalculation(targetR, targetC);
     },
-    [targetImage, rows, cols, processingSettings.tolerance]
+    [runAutoCalculation]
   );
 
+  // Initialize only when modal opens
   useEffect(() => {
-    if (isOpen && targetImage) {
+    if (isOpen && !prevIsOpenRef.current && targetImage) {
       if (currentSliceConfig) {
         setRows(currentSliceConfig.rows || initialRows);
         setCols(currentSliceConfig.cols || initialCols);
@@ -148,10 +161,12 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
         setOffsetX(currentSliceConfig.offsetX || 0);
         setOffsetY(currentSliceConfig.offsetY || 0);
         setCustomCellBoxes(currentSliceConfig.customCellBoxes);
+        setSelectedBoxIdx(null);
       } else {
         runAutoCalculation(initialRows, initialCols);
       }
     }
+    prevIsOpenRef.current = isOpen;
   }, [isOpen, targetImage, currentSliceConfig, initialRows, initialCols, runAutoCalculation]);
 
   const activeConfig: SheetSliceConfig = {
@@ -332,20 +347,82 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
     setDragMode(null);
   };
 
-  // 1. Split Selected Box into 2 Top/Bottom boxes (Solves: "2개가 잘라져 있네")
+  // 1. Split Selected Box into 2 Top/Bottom boxes (Solves: "2개가 잘라져 있네" / 상하 2개 캐릭터 분할)
   const handleSplitSelectedBox = () => {
     if (selectedBoxIdx === null || !boxes[selectedBoxIdx]) return;
     const b = boxes[selectedBoxIdx];
 
-    const halfH = Math.floor(b.height / 2);
-    const topBox = { x: b.x, y: b.y, width: b.width, height: halfH };
-    const botBox = { x: b.x, y: b.y + halfH, width: b.width, height: b.height - halfH };
+    let splitYRel = Math.floor(b.height / 2);
+
+    // Try finding the valley (gap) between top and bottom character inside the box
+    if (targetImage) {
+      try {
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = b.width;
+        offCanvas.height = b.height;
+        const oCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+        if (oCtx) {
+          oCtx.drawImage(targetImage, b.x, b.y, b.width, b.height, 0, 0, b.width, b.height);
+          const imgData = oCtx.getImageData(0, 0, b.width, b.height);
+          const d = imgData.data;
+
+          const bgR = d[0], bgG = d[1], bgB = d[2];
+          const startScan = Math.floor(b.height * 0.25);
+          const endScan = Math.floor(b.height * 0.75);
+
+          let minCount = Infinity;
+          let bestY = splitYRel;
+
+          for (let y = startScan; y <= endScan; y++) {
+            let fgCount = 0;
+            for (let x = 0; x < b.width; x++) {
+              const idx = (y * b.width + x) * 4;
+              const a = d[idx + 3];
+              if (a > 20) {
+                const diff = Math.abs(d[idx] - bgR) + Math.abs(d[idx + 1] - bgG) + Math.abs(d[idx + 2] - bgB);
+                if (diff > 40) fgCount++;
+              }
+            }
+            const distFromMid = Math.abs(y - b.height / 2);
+            const score = fgCount + distFromMid * 0.15;
+            if (score < minCount) {
+              minCount = score;
+              bestY = y;
+            }
+          }
+          if (bestY > 10 && bestY < b.height - 10) {
+            splitYRel = bestY;
+          }
+        }
+      } catch (err) {
+        console.warn('Auto split valley check failed, using half height', err);
+      }
+    }
+
+    const topBox = { x: b.x, y: b.y, width: b.width, height: splitYRel };
+    const botBox = { x: b.x, y: b.y + splitYRel, width: b.width, height: b.height - splitYRel };
 
     const nextBoxes = [...boxes];
     nextBoxes.splice(selectedBoxIdx, 1, topBox, botBox);
     setCustomCellBoxes(nextBoxes);
     setSelectedBoxIdx(selectedBoxIdx);
-    setAutoCalculatedMsg(`슬롯 #${selectedBoxIdx + 1}을(를) 상/하 2개의 개별 박스로 분할했습니다.`);
+    setAutoCalculatedMsg(`슬롯 #${selectedBoxIdx + 1}을(를) 상/하 2개의 개별 박스로 분할했습니다. (총 ${nextBoxes.length}개 슬롯)`);
+  };
+
+  // 1-2. Split Selected Box into 2 Left/Right boxes (좌/우 2개 캐릭터 분할)
+  const handleSplitLeftRightSelectedBox = () => {
+    if (selectedBoxIdx === null || !boxes[selectedBoxIdx]) return;
+    const b = boxes[selectedBoxIdx];
+
+    const halfW = Math.floor(b.width / 2);
+    const leftBox = { x: b.x, y: b.y, width: halfW, height: b.height };
+    const rightBox = { x: b.x + halfW, y: b.y, width: b.width - halfW, height: b.height };
+
+    const nextBoxes = [...boxes];
+    nextBoxes.splice(selectedBoxIdx, 1, leftBox, rightBox);
+    setCustomCellBoxes(nextBoxes);
+    setSelectedBoxIdx(selectedBoxIdx);
+    setAutoCalculatedMsg(`슬롯 #${selectedBoxIdx + 1}을(를) 좌/우 2개의 개별 박스로 분할했습니다. (총 ${nextBoxes.length}개 슬롯)`);
   };
 
   // 2. Tighten Selected Box to Content
@@ -567,15 +644,27 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
 
               {selectedBoxIdx !== null && currentSelectedBox ? (
                 <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={handleSplitSelectedBox}
-                    className="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-bold shadow transition flex items-center justify-center gap-1.5 text-xs active:scale-95"
-                    title="한 박스 안에 2개의 캐릭터가 들어있는 경우, 상하 2개의 개별 슬롯으로 나눕니다."
-                  >
-                    <Scissors className="w-3.5 h-3.5 text-amber-100" />
-                    <span>✂️ 이 박스 상/하 2개로 분할 (겹침 해결)</span>
-                  </button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSplitSelectedBox}
+                      className="py-2 px-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-bold shadow transition flex items-center justify-center gap-1 text-[11px] active:scale-95"
+                      title="한 박스 안에 위아래 2개의 캐릭터가 들어있는 경우, 상하 2개의 개별 슬롯으로 나눕니다."
+                    >
+                      <Scissors className="w-3.5 h-3.5 text-amber-100 shrink-0" />
+                      <span>✂️ 상/하 2개 분할</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSplitLeftRightSelectedBox}
+                      className="py-2 px-1 bg-gradient-to-r from-orange-600 to-amber-700 hover:from-orange-500 hover:to-amber-600 text-white rounded-lg font-bold shadow transition flex items-center justify-center gap-1 text-[11px] active:scale-95"
+                      title="한 박스 안에 좌우 2개의 캐릭터가 들어있는 경우, 좌우 2개의 개별 슬롯으로 나눕니다."
+                    >
+                      <Scissors className="w-3.5 h-3.5 text-amber-100 shrink-0" />
+                      <span>✂️ 좌/우 2개 분할</span>
+                    </button>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
@@ -601,7 +690,7 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  캔버스 위의 박스를 클릭하면 <strong className="text-amber-300">2개 겹친 박스 상하 분할</strong>, 여백 밀착, 삭제를 실행할 수 있습니다.
+                  캔버스 위의 박스를 클릭하면 <strong className="text-amber-300">상하/좌우 분할</strong>, 여백 밀착, 삭제를 실행할 수 있습니다.
                 </p>
               )}
             </div>
@@ -641,43 +730,101 @@ export const GridSliceModal: React.FC<GridSliceModalProps> = ({
             <div className="p-2.5 bg-slate-800/40 rounded-xl border border-slate-800 space-y-1.5">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-slate-300">그리드 규격</span>
-                <span className="font-mono text-cyan-400 font-bold">
-                  {rows}행 × {cols}열
+                <span className="font-mono text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                  {rows}행 × {cols}열 ({rows * cols}칸)
                 </span>
               </div>
+
+              {/* 30-slot Grid Buttons */}
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setRows(5);
-                    setCols(6);
-                    setCustomCellBoxes(undefined);
-                    runAutoCalculation(5, 6);
-                  }}
-                  className={`py-1 rounded-lg font-bold border transition text-[11px] ${
-                    rows === 5 && cols === 6
-                      ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/60 shadow'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                  onClick={() => handleSwitchGrid(6, 5)}
+                  className={`py-1.5 rounded-lg font-bold border transition text-[11px] flex items-center justify-center gap-1 ${
+                    rows === 6 && cols === 5
+                      ? 'bg-cyan-600 text-white border-cyan-400 shadow-md ring-1 ring-cyan-400'
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750 hover:text-white'
                   }`}
                 >
-                  5행 × 6열 (30칸)
+                  <span>6행 × 5열 (30칸)</span>
+                  {rows === 6 && cols === 5 && <Check className="w-3 h-3 text-white" />}
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setRows(6);
-                    setCols(5);
-                    setCustomCellBoxes(undefined);
-                    runAutoCalculation(6, 5);
-                  }}
-                  className={`py-1 rounded-lg font-bold border transition text-[11px] ${
-                    rows === 6 && cols === 5
-                      ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/60 shadow'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                  onClick={() => handleSwitchGrid(5, 6)}
+                  className={`py-1.5 rounded-lg font-bold border transition text-[11px] flex items-center justify-center gap-1 ${
+                    rows === 5 && cols === 6
+                      ? 'bg-cyan-600 text-white border-cyan-400 shadow-md ring-1 ring-cyan-400'
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750 hover:text-white'
                   }`}
                 >
-                  6행 × 5열 (30칸)
+                  <span>5행 × 6열 (30칸)</span>
+                  {rows === 5 && cols === 6 && <Check className="w-3 h-3 text-white" />}
                 </button>
+              </div>
+
+              {sheetMode === 15 && (
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(3, 5)}
+                    className={`py-1 rounded-lg font-bold border transition text-[10px] ${
+                      rows === 3 && cols === 5
+                        ? 'bg-cyan-600 text-white border-cyan-400 shadow'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    3행 × 5열 (15칸)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(5, 3)}
+                    className={`py-1 rounded-lg font-bold border transition text-[10px] ${
+                      rows === 5 && cols === 3
+                        ? 'bg-cyan-600 text-white border-cyan-400 shadow'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    5행 × 3열 (15칸)
+                  </button>
+                </div>
+              )}
+
+              {/* Precise Step adjustment for rows/cols */}
+              <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-800 text-slate-400">
+                <div className="flex items-center gap-1">
+                  <span>행(세로):</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(Math.max(1, rows - 1), cols)}
+                    className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded flex items-center justify-center font-bold text-xs"
+                    title="행 1개 감소"
+                  >-</button>
+                  <span className="font-mono text-cyan-300 font-bold px-1">{rows}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(rows + 1, cols)}
+                    className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded flex items-center justify-center font-bold text-xs"
+                    title="행 1개 증가"
+                  >+</button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span>열(가로):</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(rows, Math.max(1, cols - 1))}
+                    className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded flex items-center justify-center font-bold text-xs"
+                    title="열 1개 감소"
+                  >-</button>
+                  <span className="font-mono text-cyan-300 font-bold px-1">{cols}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchGrid(rows, cols + 1)}
+                    className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded flex items-center justify-center font-bold text-xs"
+                    title="열 1개 증가"
+                  >+</button>
+                </div>
               </div>
             </div>
 
